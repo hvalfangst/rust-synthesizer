@@ -5,7 +5,8 @@ use minifb::{Key, KeyRepeat, Window};
 use rodio::{Sink, Source};
 
 use crate::{
-    graphics::constants::*
+    graphics::constants::*,
+    graphics::waveform_display::generate_waveform_display
 };
 use crate::graphics::sprites::{draw_sprite, Sprite, Sprites};
 use crate::music_theory::{OCTAVE_LOWER_BOUND, OCTAVE_UPPER_BOUND};
@@ -31,11 +32,27 @@ use crate::waveforms::sawtooth_wave::SawtoothWave;
 /// - Decreases the octave when 'F1' key is pressed and the current octave is above the lower bound.
     pub fn handle_key_presses(state: &mut State, window: &mut Window, sink: &mut Sink) {
         // Check for musical note key presses
+        let mut key_pressed = false;
         for (key, note, _, _) in get_key_mappings() {
             if window.is_key_pressed(key, KeyRepeat::No) {
                 handle_musical_note(state, sink, note);
                 state.pressed_key = Some((key, note));
+                key_pressed = true;
                 return;
+            }
+        }
+        
+        // If no musical key is pressed, start the fade-out effect
+        if !key_pressed && state.pressed_key.is_some() {
+            state.key_release_time = Some(std::time::Instant::now());
+            state.pressed_key = None;
+        }
+        
+        // Clear frequency after fade-out is complete
+        if let Some(release_time) = state.key_release_time {
+            if release_time.elapsed().as_secs_f32() > 2.0 {
+                state.current_frequency = None;
+                state.key_release_time = None;
             }
         }
 
@@ -83,6 +100,11 @@ pub fn handle_musical_note(state: &mut State, sink: &mut Sink, note: Note) {
 
     // Compute the base frequency association with the note and octave
     let base_frequency = note.frequency(state.octave);
+    
+    // Store the current frequency for display purposes and reset animation timing
+    state.current_frequency = Some(base_frequency);
+    state.animation_start_time = std::time::Instant::now();
+    state.key_release_time = None; // Clear any previous release time
 
     // Initialize Synth implementation based on Waveform enum
     let synth = match state.waveform {
@@ -123,7 +145,7 @@ pub fn handle_musical_note(state: &mut State, sink: &mut Sink, note: Note) {
 /// - `window_buffer`: Mutable reference to the window buffer where pixels are drawn.
 /// - `grid_width`: Width of the grid in tiles.
 /// - `grid_height`: Height of the grid in tiles.
-pub fn update_buffer_with_state(state: &State, sprites: &Sprites, window_buffer: &mut Vec<u32>, rack_index: usize, display_index: usize) {
+pub fn update_buffer_with_state(state: &State, sprites: &Sprites, window_buffer: &mut Vec<u32>, rack_index: usize) {
 
     // Draw rack
     draw_rack_sprite(sprites, window_buffer, rack_index);
@@ -149,14 +171,33 @@ pub fn update_buffer_with_state(state: &State, sprites: &Sprites, window_buffer:
     // Draw octave fader, which display the current octave controlled by keys F1/F2
     draw_octave_fader_sprite(state.octave, sprites, window_buffer);
 
-    let sprite = match state.waveform {
-        Waveform::SINE => &sprites.display_sine,
-        Waveform::SQUARE => &sprites.display_square,
-        Waveform::TRIANGLE => &sprites.display_sine, // Fallback to sine sprite for now
-        Waveform::SAWTOOTH => &sprites.display_square // Fallback to square sprite for now
+    // Calculate animation time and amplitude for waveform display
+    let animation_time = state.animation_start_time.elapsed().as_secs_f32();
+    
+    // Always show the display frame, but only show waveform when playing or fading
+    let (frequency, amplitude) = if state.current_frequency.is_some() || state.key_release_time.is_some() {
+        // Calculate amplitude based on whether key is pressed or released
+        let amplitude = if let Some(release_time) = state.key_release_time {
+            // Fade out over 2 seconds after key release
+            let fade_duration = release_time.elapsed().as_secs_f32();
+            let fade_factor = (1.0 - fade_duration / 2.0).max(0.0);
+            fade_factor
+        } else {
+            1.0 // Full brightness when key is pressed
+        };
+        
+        // Use last played frequency during fade
+        let frequency = state.current_frequency.unwrap_or(440.0);
+        (frequency, amplitude)
+    } else {
+        // No waveform - just show empty display
+        (440.0, 0.0) // Amplitude 0 means no waveform will be drawn
     };
-
-    draw_display_sprite(sprite, window_buffer, display_index);
+    
+    // Always generate display (frame always visible, waveform only when amplitude > 0)
+    let waveform_sprite = generate_waveform_display(frequency, state.waveform, animation_time, amplitude);
+    draw_display_sprite_single(&waveform_sprite, window_buffer);
+    
 
     // Check if a key is pressed
     if let Some((_, note)) = &state.pressed_key {
@@ -278,6 +319,17 @@ pub fn draw_display_sprite(sprite: &Vec<Sprite>, buffer: &mut [u32], display_ind
     draw_sprite(1 * sprite[0].width as usize,
                 4 * sprite[0].height as usize + 17,
                 &sprite[display_index], buffer, WINDOW_WIDTH);
+}
+
+/// Draws a single waveform display sprite.
+///
+/// # Parameters
+/// - `sprite`: A reference to the single `Sprite` to be drawn.
+/// - `window_buffer`: A mutable reference to the buffer representing the window's pixels.
+pub fn draw_display_sprite_single(sprite: &Sprite, buffer: &mut [u32]) {
+    draw_sprite(1 * sprite.width as usize,
+                4 * sprite.height as usize + 17,
+                sprite, buffer, WINDOW_WIDTH);
 }
 
 /// Draws the pressed key sprite.

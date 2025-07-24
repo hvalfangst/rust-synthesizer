@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use minifb::Key;
 
@@ -19,7 +19,10 @@ pub struct State {
     pressed_key: Option<(Key, Note)>,
     waveform_sprite_index: usize,
     filter_factor: f32,
-    lpf_active: usize
+    lpf_active: usize,
+    current_frequency: Option<f32>, // Track current playing frequency
+    animation_start_time: Instant, // When the animation started
+    key_release_time: Option<Instant>, // When the key was released for fade-out
 }
 
 // Initialize Synthesizer State
@@ -32,6 +35,9 @@ impl State {
             waveform_sprite_index: WAVEFORM_SINE, // Set default waveform sprite index to Sine
             filter_factor: 1.0, // Set default cutoff to 1.0
             lpf_active: 0, // Default for LPF is deactivated
+            current_frequency: None, // No frequency being played initially
+            animation_start_time: Instant::now(), // Initialize animation time
+            key_release_time: None, // No key released initially
         }
     }
 

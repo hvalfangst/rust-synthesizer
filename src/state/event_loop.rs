@@ -38,8 +38,6 @@ pub fn start_event_loop(state: &mut State, sink: &mut Sink, sprites: &Sprites) {
     let mut rack_index = 0; // Default rack sprite index
     let mut last_rack_change = Instant::now(); // Records time of last rack index change
 
-    let mut display_index = 0; // Default display sprite index
-    let mut last_display_change = Instant::now(); // Records time of last display index change
 
     // Initialize window buffer to store pixel data
     let mut window_buffer = vec![0; WINDOW_WIDTH * WINDOW_HEIGHT];
@@ -57,14 +55,9 @@ pub fn start_event_loop(state: &mut State, sink: &mut Sink, sprites: &Sprites) {
             last_rack_change = Instant::now();
         }
 
-        // Change display index every 300 milliseconds, cycling from sprite index 0 to 5
-        if last_display_change.elapsed() >= Duration::from_millis(300) {
-            display_index = (display_index + 1) % 6;
-            last_display_change = Instant::now();
-        }
 
         // Update the pixel buffer with the current state visuals
-        update_buffer_with_state(state, sprites, &mut window_buffer, rack_index, display_index);
+        update_buffer_with_state(state, sprites, &mut window_buffer, rack_index);
 
         // Draw the current buffer onto the window
         draw_buffer(&mut window, &mut window_buffer);

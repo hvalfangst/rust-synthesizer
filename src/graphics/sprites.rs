@@ -7,7 +7,7 @@ pub struct Sprite {
 }
 
 impl Sprite {
-    fn new(width: u32, height: u32, data: Vec<u32>) -> Self {
+    pub fn new(width: u32, height: u32, data: Vec<u32>) -> Self {
         Self { width, height, data }
     }
 }
