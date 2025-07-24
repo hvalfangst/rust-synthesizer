@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use minifb::Key;
 
-use crate::graphics::constants::{WAVEFORM_SINE, WAVEFORM_SQUARE};
+use crate::graphics::constants::{WAVEFORM_SAWTOOTH, WAVEFORM_SINE, WAVEFORM_SQUARE, WAVEFORM_TRIANGLE};
 use crate::music_theory::{OCTAVE_LOWER_BOUND, OCTAVE_UPPER_BOUND};
 use crate::music_theory::note::Note;
 use crate::waveforms::Waveform;
@@ -87,9 +87,17 @@ impl State {
                 Waveform::SQUARE
             },
             Waveform::SQUARE => {
+                self.waveform_sprite_index = WAVEFORM_TRIANGLE;
+                Waveform::TRIANGLE
+            },
+            Waveform::TRIANGLE => {
+                self.waveform_sprite_index = WAVEFORM_SAWTOOTH;
+                Waveform::SAWTOOTH
+            },
+            Waveform::SAWTOOTH => {
                 self.waveform_sprite_index = WAVEFORM_SINE;
                 Waveform::SINE
-            },
+            }
         };
     }
 }

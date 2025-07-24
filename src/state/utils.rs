@@ -14,6 +14,8 @@ use crate::state::State;
 use crate::waveforms::{AMPLITUDE, DURATION, Waveform};
 use crate::waveforms::sine_wave::SineWave;
 use crate::waveforms::square_wave::SquareWave;
+use crate::waveforms::triangle_wave::TriangleWave;
+use crate::waveforms::sawtooth_wave::SawtoothWave;
 
 /// Handles key presses for musical notes, waveform toggling, and octave adjustments.
 ///
@@ -84,15 +86,25 @@ pub fn handle_musical_note(state: &mut State, sink: &mut Sink, note: Note) {
 
     // Initialize Synth implementation based on Waveform enum
     let synth = match state.waveform {
+        Waveform::SINE => {
+            let filtered_frequency = state.apply_lpf(base_frequency);
+            let sine_wave = SineWave::new(filtered_frequency);
+            Box::new(sine_wave) as Box<dyn Source<Item=f32> + 'static + Send>
+        }
         Waveform::SQUARE => {
             let filtered_frequency = state.apply_lpf(base_frequency);
             let square_wave = SquareWave::new(filtered_frequency);
             Box::new(square_wave) as Box<dyn Source<Item=f32> + 'static + Send>
         }
-        _ => {
+        Waveform::TRIANGLE => {
             let filtered_frequency = state.apply_lpf(base_frequency);
-            let sine_wave = SineWave::new(filtered_frequency);
-            Box::new(sine_wave) as Box<dyn Source<Item=f32> + 'static + Send>
+            let triangle_wave = TriangleWave::new(filtered_frequency);
+            Box::new(triangle_wave) as Box<dyn Source<Item=f32> + 'static + Send>
+        }
+        Waveform::SAWTOOTH => {
+            let filtered_frequency = state.apply_lpf(base_frequency);
+            let sawtooth_wave = SawtoothWave::new(filtered_frequency);
+            Box::new(sawtooth_wave) as Box<dyn Source<Item=f32> + 'static + Send>
         }
     };
 
@@ -139,7 +151,9 @@ pub fn update_buffer_with_state(state: &State, sprites: &Sprites, window_buffer:
 
     let sprite = match state.waveform {
         Waveform::SINE => &sprites.display_sine,
-        Waveform::SQUARE => &sprites.display_square
+        Waveform::SQUARE => &sprites.display_square,
+        Waveform::TRIANGLE => &sprites.display_sine, // Fallback to sine sprite for now
+        Waveform::SAWTOOTH => &sprites.display_square // Fallback to square sprite for now
     };
 
     draw_display_sprite(sprite, window_buffer, display_index);

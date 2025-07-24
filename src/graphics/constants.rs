@@ -5,6 +5,8 @@ pub const WINDOW_HEIGHT: usize = 496;
 // Constants for waveforms
 pub const WAVEFORM_SINE: usize = 0;
 pub const WAVEFORM_SQUARE: usize = 1;
+pub const WAVEFORM_TRIANGLE: usize = 2;
+pub const WAVEFORM_SAWTOOTH: usize = 3;
 
 // Constants for keys
 pub const KEY_IDLE: usize = 0;
