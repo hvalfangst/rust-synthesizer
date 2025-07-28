@@ -106,6 +106,9 @@ pub fn handle_musical_note(state: &mut State, sink: &mut Sink, note: Note) {
     state.animation_start_time = std::time::Instant::now();
     state.key_release_time = None; // Clear any previous release time
 
+    // Stop any currently playing audio to prevent queueing
+    sink.stop();
+
     // Initialize Synth implementation based on Waveform enum
     let synth = match state.waveform {
         Waveform::SINE => {
@@ -133,7 +136,7 @@ pub fn handle_musical_note(state: &mut State, sink: &mut Sink, note: Note) {
     // Create Source from our Synth
     let source = synth.take_duration(Duration::from_secs_f32(DURATION)).amplify(AMPLITUDE);
 
-    // Append the sound source to the audio sink for playback
+    // Play the sound source immediately, replacing any queued audio
     let _result = sink.append(source);
 }
 
