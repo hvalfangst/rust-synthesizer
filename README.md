@@ -1,9 +1,9 @@
 # Rust Synthesizer with GUI
 
-Software synthesizer programmed in Rust using crates [rodio](https://crates.io/crates/rodio) for audio playback, 
-[minifb](https://crates.io/crates/minifb) for handling of user input 
+Software synthesizer programmed in Rust featuring real-time ADSR envelope control and multiple waveforms. Built using [rodio](https://crates.io/crates/rodio) for audio playback, 
+[minifb](https://crates.io/crates/minifb) for user input handling, 
 and [image](https://crates.io/crates/image) for sprite rendering. 
-All assets are made by me using [Aseprite](https://www.aseprite.org/).
+All visual assets are custom-made using [Aseprite](https://www.aseprite.org/).
 
 ## Requirements
 * [Rust](https://www.rust-lang.org/tools/install)
@@ -54,12 +54,17 @@ Octave Control:
     F1: Decrease the octave (0 is minimum)
     F2: Increase the octave (6 is maximum)
 
-Filter Control:
-    
-    F:  Turn low pass filter on/off     
-    F3: Decrease the filter cutoff (0.15 is minimum)
-    F4: Increase the filter cutoff (0.99 is maximum)
-
 Waveform Control:
 
-    S: Toggle waveform between sine and square
+    S: Toggle waveform between sine, square, triangle, and sawtooth
+
+ADSR Envelope Control:
+
+    F3: Decrease Attack (0-99, controls fade-in time)
+    F4: Increase Attack
+    F5: Decrease Decay (0-99, controls fade from peak to sustain)
+    F6: Increase Decay  
+    F7: Decrease Sustain (0-99, controls held volume level)
+    F8: Increase Sustain
+    F9: Decrease Release (0-99, controls fade-out time)
+    0:  Increase Release

@@ -43,10 +43,10 @@ use crate::waveforms::adsr_envelope::ADSREnvelope;
             }
         }
         
-        // If no musical key is pressed, start the fade-out effect
-        if !key_pressed && state.pressed_key.is_some() {
+        // If no musical key is pressed, start the fade-out effect but keep the visual key displayed
+        if !key_pressed && state.pressed_key.is_some() && state.key_release_time.is_none() {
             state.key_release_time = Some(std::time::Instant::now());
-            state.pressed_key = None;
+            // Don't clear pressed_key here - keep it for visual display until next key press
         }
         
         // Clear frequency after fade-out is complete
