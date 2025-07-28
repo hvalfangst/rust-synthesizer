@@ -22,7 +22,8 @@ pub struct Sprites {
     pub display_sine: Vec<Sprite>,
     pub display_square: Vec<Sprite>,
     pub octave_fader: Vec<Sprite>,
-    pub bulb: Vec<Sprite>
+    pub bulb: Vec<Sprite>,
+    pub adsr_fader: Vec<Sprite>, // ADSR fader sprites (10 positions for fine control)
 }
 
 impl Sprites {
@@ -37,7 +38,8 @@ impl Sprites {
             display_square: load_sprites_from_map("assets/display_square.png", 164, 51),
             rack: load_sprites_from_map("assets/rack.png", 600, 496),
             octave_fader: load_sprites_from_map("assets/octave_fader.png", 28, 143),
-            bulb: load_sprites_from_map("assets/bulb.png", 12, 12)
+            bulb: load_sprites_from_map("assets/bulb.png", 12, 12),
+            adsr_fader: load_sprites_from_map("assets/octave_fader.png", 28, 143), // Reuse octave_fader sprites for now
         }
     }
 }

@@ -23,6 +23,11 @@ pub struct State {
     current_frequency: Option<f32>, // Track current playing frequency
     animation_start_time: Instant, // When the animation started
     key_release_time: Option<Instant>, // When the key was released for fade-out
+    // ADSR parameters (0 to 99)
+    pub attack: u8,  // Attack time (0 = instant, 99 = 2 seconds)
+    pub decay: u8,   // Decay time (0 = instant, 99 = 2 seconds)
+    pub sustain: u8, // Sustain level (0 = silent, 99 = full volume)
+    pub release: u8, // Release time (0 = instant, 99 = 2 seconds)
 }
 
 // Initialize Synthesizer State
@@ -38,6 +43,11 @@ impl State {
             current_frequency: None, // No frequency being played initially
             animation_start_time: Instant::now(), // Initialize animation time
             key_release_time: None, // No key released initially
+            // ADSR defaults for immediate sound
+            attack: 0,   // Instant attack
+            decay: 0,    // No decay
+            sustain: 99, // Full sustain level
+            release: 20, // Quick release
         }
     }
 
@@ -105,5 +115,94 @@ impl State {
                 Waveform::SINE
             }
         };
+    }
+
+    // ADSR control methods (0-99 range)
+    pub fn increase_attack(&mut self) {
+        self.attack = (self.attack + 1).min(99);
+    }
+
+    pub fn decrease_attack(&mut self) {
+        self.attack = self.attack.saturating_sub(1);
+    }
+
+    pub fn increase_decay(&mut self) {
+        self.decay = (self.decay + 1).min(99);
+    }
+
+    pub fn decrease_decay(&mut self) {
+        self.decay = self.decay.saturating_sub(1);
+    }
+
+    pub fn increase_sustain(&mut self) {
+        self.sustain = (self.sustain + 1).min(99);
+    }
+
+    pub fn decrease_sustain(&mut self) {
+        self.sustain = self.sustain.saturating_sub(1);
+    }
+
+    pub fn increase_release(&mut self) {
+        self.release = (self.release + 1).min(99);
+    }
+
+    pub fn decrease_release(&mut self) {
+        self.release = self.release.saturating_sub(1);
+    }
+
+    // Helper methods to convert 0-99 values to 0.0-1.0 range for calculations
+    pub fn attack_normalized(&self) -> f32 {
+        self.attack as f32 / 99.0
+    }
+
+    pub fn decay_normalized(&self) -> f32 {
+        self.decay as f32 / 99.0
+    }
+
+    pub fn sustain_normalized(&self) -> f32 {
+        self.sustain as f32 / 99.0
+    }
+
+    pub fn release_normalized(&self) -> f32 {
+        self.release as f32 / 99.0
+    }
+
+    /// Calculate ADSR envelope amplitude at a given time since note start
+    pub fn calculate_adsr_amplitude(&self, time_since_start: f32, is_key_pressed: bool, time_since_release: Option<f32>) -> f32 {
+        if let Some(release_time) = time_since_release {
+            // Release phase
+            let release_duration = self.release_normalized() * 2.0; // Scale to 2 seconds max
+            if release_duration == 0.0 {
+                return 0.0;
+            }
+            let release_progress = (release_time / release_duration).min(1.0);
+            return self.sustain_normalized() * (1.0 - release_progress);
+        }
+
+        if !is_key_pressed {
+            return 0.0;
+        }
+
+        let attack_duration = self.attack_normalized() * 2.0; // Scale to 2 seconds max
+        let decay_duration = self.decay_normalized() * 2.0;
+
+        if time_since_start <= attack_duration {
+            // Attack phase
+            if attack_duration == 0.0 {
+                return 1.0;
+            }
+            return time_since_start / attack_duration;
+        } else if time_since_start <= attack_duration + decay_duration {
+            // Decay phase
+            if decay_duration == 0.0 {
+                return self.sustain_normalized();
+            }
+            let decay_time = time_since_start - attack_duration;
+            let decay_progress = decay_time / decay_duration;
+            return 1.0 - (1.0 - self.sustain_normalized()) * decay_progress;
+        } else {
+            // Sustain phase
+            return self.sustain_normalized();
+        }
     }
 }

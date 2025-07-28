@@ -4,6 +4,7 @@ pub mod sine_wave;
 pub mod square_wave;
 pub mod triangle_wave;
 pub mod sawtooth_wave;
+pub mod adsr_envelope;
 
 pub const MONO: u16 = 1;
 pub const SAMPLE_RATE: f32 = 48000.0;

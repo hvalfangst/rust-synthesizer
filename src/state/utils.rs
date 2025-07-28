@@ -17,6 +17,7 @@ use crate::waveforms::sine_wave::SineWave;
 use crate::waveforms::square_wave::SquareWave;
 use crate::waveforms::triangle_wave::TriangleWave;
 use crate::waveforms::sawtooth_wave::SawtoothWave;
+use crate::waveforms::adsr_envelope::ADSREnvelope;
 
 /// Handles key presses for musical notes, waveform toggling, and octave adjustments.
 ///
@@ -71,19 +72,51 @@ use crate::waveforms::sawtooth_wave::SawtoothWave;
         state.decrease_octave();
     }
 
-    // Activate/Deactivate LPF (low pass filter) when 'F' key is pressed
-    if window.is_key_pressed(Key::F, KeyRepeat::No) {
-        state.toggle_lpf();
+    // // Activate/Deactivate LPF (low pass filter) when 'F' key is pressed
+    // if window.is_key_pressed(Key::F, KeyRepeat::No) {
+    //     state.toggle_lpf();
+    // }
+
+    // // Increase the filter cutoff coefficient when 'F4' key is pressed
+    // if window.is_key_pressed(Key::F4, KeyRepeat::No) {
+    //     state.increase_filter_cutoff();
+    // }
+
+    // // Decrease the filter cutoff coefficient when 'F3' key is pressed
+    // if window.is_key_pressed(Key::F3, KeyRepeat::No) {
+    //     state.decrease_filter_cutoff();
+    // }
+
+    // ADSR control key bindings
+    if window.is_key_pressed(Key::F4, KeyRepeat::Yes) {
+        state.increase_attack();
+    }
+    if window.is_key_pressed(Key::F3, KeyRepeat::Yes) {
+        state.decrease_attack();
     }
 
-    // Increase the filter cutoff coefficient when 'F4' key is pressed
-    if window.is_key_pressed(Key::F4, KeyRepeat::No) {
-        state.increase_filter_cutoff();
+    // Decay controls
+    if window.is_key_pressed(Key::F6, KeyRepeat::Yes) {
+        state.increase_decay();
+    }
+    if window.is_key_pressed(Key::F5, KeyRepeat::Yes) {
+        state.decrease_decay();
     }
 
-    // Decrease the filter cutoff coefficient when 'F3' key is pressed
-    if window.is_key_pressed(Key::F3, KeyRepeat::No) {
-        state.decrease_filter_cutoff();
+    // Sustain controls
+    if window.is_key_pressed(Key::F8, KeyRepeat::Yes) {
+        state.increase_sustain();
+    }
+    if window.is_key_pressed(Key::F7, KeyRepeat::Yes) {
+        state.decrease_sustain();
+    }
+
+    // Release controls
+    if window.is_key_pressed(Key::Key0, KeyRepeat::Yes) {
+        state.increase_release();
+    }
+    if window.is_key_pressed(Key::F9, KeyRepeat::Yes) {
+        state.decrease_release();
     }
 
 }
@@ -109,32 +142,60 @@ pub fn handle_musical_note(state: &mut State, sink: &mut Sink, note: Note) {
     // Stop any currently playing audio to prevent queueing
     sink.stop();
 
-    // Initialize Synth implementation based on Waveform enum
+    // Initialize Synth implementation based on Waveform enum with ADSR envelope
     let synth = match state.waveform {
         Waveform::SINE => {
             let filtered_frequency = state.apply_lpf(base_frequency);
             let sine_wave = SineWave::new(filtered_frequency);
-            Box::new(sine_wave) as Box<dyn Source<Item=f32> + 'static + Send>
+            let adsr_envelope = ADSREnvelope::new(
+                sine_wave, 
+                state.attack_normalized() * 2.0,    // Convert 0-99 to 0-2 seconds
+                state.decay_normalized() * 2.0, 
+                state.sustain_normalized(), 
+                state.release_normalized() * 2.0
+            );
+            Box::new(adsr_envelope) as Box<dyn Source<Item=f32> + 'static + Send>
         }
         Waveform::SQUARE => {
             let filtered_frequency = state.apply_lpf(base_frequency);
             let square_wave = SquareWave::new(filtered_frequency);
-            Box::new(square_wave) as Box<dyn Source<Item=f32> + 'static + Send>
+            let adsr_envelope = ADSREnvelope::new(
+                square_wave, 
+                state.attack_normalized() * 2.0, 
+                state.decay_normalized() * 2.0, 
+                state.sustain_normalized(), 
+                state.release_normalized() * 2.0
+            );
+            Box::new(adsr_envelope) as Box<dyn Source<Item=f32> + 'static + Send>
         }
         Waveform::TRIANGLE => {
             let filtered_frequency = state.apply_lpf(base_frequency);
             let triangle_wave = TriangleWave::new(filtered_frequency);
-            Box::new(triangle_wave) as Box<dyn Source<Item=f32> + 'static + Send>
+            let adsr_envelope = ADSREnvelope::new(
+                triangle_wave, 
+                state.attack_normalized() * 2.0, 
+                state.decay_normalized() * 2.0, 
+                state.sustain_normalized(), 
+                state.release_normalized() * 2.0
+            );
+            Box::new(adsr_envelope) as Box<dyn Source<Item=f32> + 'static + Send>
         }
         Waveform::SAWTOOTH => {
             let filtered_frequency = state.apply_lpf(base_frequency);
             let sawtooth_wave = SawtoothWave::new(filtered_frequency);
-            Box::new(sawtooth_wave) as Box<dyn Source<Item=f32> + 'static + Send>
+            let adsr_envelope = ADSREnvelope::new(
+                sawtooth_wave, 
+                state.attack_normalized() * 2.0, 
+                state.decay_normalized() * 2.0, 
+                state.sustain_normalized(), 
+                state.release_normalized() * 2.0
+            );
+            Box::new(adsr_envelope) as Box<dyn Source<Item=f32> + 'static + Send>
         }
     };
 
-    // Create Source from our Synth
-    let source = synth.take_duration(Duration::from_secs_f32(DURATION)).amplify(AMPLITUDE);
+    // Create Source from our Synth with ADSR envelope - envelope handles its own termination
+    let source = synth.amplify(AMPLITUDE);
 
     // Play the sound source immediately, replacing any queued audio
     let _result = sink.append(source);
@@ -163,13 +224,16 @@ pub fn update_buffer_with_state(state: &State, sprites: &Sprites, window_buffer:
     draw_idle_tangent_sprites(sprites, window_buffer, &tangent_map);
 
     // Draw the bulb
-    draw_bulb_sprite(state, sprites, window_buffer);
+    // draw_bulb_sprite(state, sprites, window_buffer);
 
     // Draw the cutoff knob for LPF
-    draw_filter_cutoff_knob_sprite(state, sprites, window_buffer);
+    // draw_filter_cutoff_knob_sprite(state, sprites, window_buffer);
 
     // Draw the idle knob to the left of the cutoff knob for LPF
-    draw_idle_knob_sprite(sprites, window_buffer);
+    // draw_idle_knob_sprite(sprites, window_buffer);
+
+    // Draw ADSR faders
+    draw_adsr_faders(state, sprites, window_buffer);
 
     // Draw octave fader, which display the current octave controlled by keys F1/F2
     draw_octave_fader_sprite(state.octave, sprites, window_buffer);
@@ -472,6 +536,169 @@ pub fn draw_idle_key_sprites(sprites: &Sprites, window_buffer: &mut Vec<u32>) {
             window_buffer,
             WINDOW_WIDTH
         );
+    }
+}
+
+/// Draws ADSR faders with custom vertical bars and numerical values (0-99).
+///
+/// # Parameters
+/// - `state`: Reference to the current `State` containing ADSR values.
+/// - `sprites`: A reference to the `Sprites` struct containing all the sprite images.
+/// - `window_buffer`: A mutable reference to the buffer representing the window's pixels.
+pub fn draw_adsr_faders(state: &State, sprites: &Sprites, window_buffer: &mut Vec<u32>) {
+    // Compact fader dimensions to fit all 4 ADSR faders
+    let fader_width = 25;
+    let fader_height = 50;
+    let fader_spacing = 30; // Minimal spacing between faders
+    
+    // Position faders directly to the right of waveform visualizer
+    // Display is positioned at: x = 1 * 164 = 164, y = 4 * 51 + 17 = 221
+    let display_x = 164; // Display x position
+    let display_width = 164; // Display width (from DISPLAY_WIDTH constant)
+    let display_y = 4 * 51 + 17; // Display y position
+
+    let base_x = display_x + display_width + 104; // Start right after display (164 + 164 + 5 = 333px)
+    let base_y = display_y; // Same y as display
+    
+    // ADSR values
+    let adsr_values = [state.attack, state.decay, state.sustain, state.release];
+    let labels = ["A", "D", "S", "R"];
+    
+    // Draw each ADSR fader
+    for (i, (&value, &label)) in adsr_values.iter().zip(labels.iter()).enumerate() {
+        let x = base_x + i * fader_spacing;
+        let y = base_y;
+        
+        // Draw fader background (dark gray border)
+        draw_fader_background(x, y, fader_width, fader_height, window_buffer);
+        
+        // Draw fader fill (based on value 0-99)
+        let fill_height = (value as f32 / 99.0 * (fader_height - 4) as f32) as usize;
+        draw_fader_fill(x + 2, y + (fader_height - 2 - fill_height), fader_width - 4, fill_height, window_buffer);
+
+        // Draw label below fader (A, D, S, R) - centered for smaller width
+        draw_fader_label(x + fader_width / 2 - 2, y + fader_height + 3, label, window_buffer);
+    }
+}
+
+/// Draws a fader background rectangle
+fn draw_fader_background(x: usize, y: usize, width: usize, height: usize, buffer: &mut Vec<u32>) {
+    let border_color = 0xFF404040; // Dark gray
+    let bg_color = 0xFF202020;     // Very dark gray
+    
+    for dy in 0..height {
+        for dx in 0..width {
+            let pixel_x = x + dx;
+            let pixel_y = y + dy;
+            let index = pixel_y * WINDOW_WIDTH + pixel_x;
+            
+            if index < buffer.len() {
+                // Draw border
+                if dx == 0 || dx == width - 1 || dy == 0 || dy == height - 1 {
+                    buffer[index] = border_color;
+                } else {
+                    buffer[index] = bg_color;
+                }
+            }
+        }
+    }
+}
+
+/// Draws the fader fill based on value
+fn draw_fader_fill(x: usize, y: usize, width: usize, height: usize, buffer: &mut Vec<u32>) {
+    let fill_color = 0xFF00AA00; // Green
+    
+    for dy in 0..height {
+        for dx in 0..width {
+            let pixel_x = x + dx;
+            let pixel_y = y + dy;
+            let index = pixel_y * WINDOW_WIDTH + pixel_x;
+            
+            if index < buffer.len() {
+                buffer[index] = fill_color;
+            }
+        }
+    }
+}
+
+/// Draws a numerical value using number sprites
+fn draw_number_value(x: usize, y: usize, value: u8, sprites: &Sprites, buffer: &mut Vec<u32>) {
+    if value < 10 {
+        // Single digit
+        if value < sprites.numbers.len() as u8 {
+            draw_sprite(x, y, &sprites.numbers[value as usize], buffer, WINDOW_WIDTH);
+        }
+    } else {
+        // Two digits
+        let tens = value / 10;
+        let ones = value % 10;
+        
+        if tens < sprites.numbers.len() as u8 {
+            draw_sprite(x - 5, y, &sprites.numbers[tens as usize], buffer, WINDOW_WIDTH);
+        }
+        if ones < sprites.numbers.len() as u8 {
+            draw_sprite(x + 15, y, &sprites.numbers[ones as usize], buffer, WINDOW_WIDTH);
+        }
+    }
+}
+
+/// Draws a simple text label for the fader
+fn draw_fader_label(x: usize, y: usize, label: &str, buffer: &mut Vec<u32>) {
+    let text_color = 0xFFFFFFFF; // White
+    
+    // Simple 5x7 pixel font for A, D, S, R
+    let patterns = match label {
+        "A" => vec![ // A
+            0b01110,
+            0b10001,
+            0b10001,
+            0b11111,
+            0b10001,
+            0b10001,
+            0b10001,
+        ],
+        "D" => vec![ // D
+            0b11110,
+            0b10001,
+            0b10001,
+            0b10001,
+            0b10001,
+            0b10001,
+            0b11110,
+        ],
+        "S" => vec![ // S
+            0b01111,
+            0b10000,
+            0b10000,
+            0b01110,
+            0b00001,
+            0b00001,
+            0b11110,
+        ],
+        "R" => vec![ // R
+            0b11110,
+            0b10001,
+            0b10001,
+            0b11110,
+            0b10100,
+            0b10010,
+            0b10001,
+        ],
+        _ => return,
+    };
+    
+    for (row, &pattern) in patterns.iter().enumerate() {
+        for col in 0..5 {
+            if (pattern >> (4 - col)) & 1 == 1 {
+                let pixel_x = x + col;
+                let pixel_y = y + row;
+                let index = pixel_y * WINDOW_WIDTH + pixel_x;
+                
+                if index < buffer.len() {
+                    buffer[index] = text_color;
+                }
+            }
+        }
     }
 }
 
