@@ -405,13 +405,16 @@ fn handle_waveform_display_mouse(state: &mut State) {
 
 /// Handle mouse interactions with control buttons
 fn handle_control_buttons_mouse(state: &mut State) {
-    // Control button positions (we'll add these as simple rectangular areas)
+    // Control button positions - aligned with note display terminal (top left area)
     let button_width = 60;
     let button_height = 30;
-    let button_y = 50;
+    let button_y = 180;
+    
+    // Align with note display X position: 1 * 64 = 64
+    let base_x = 66; // Same X as note display terminal
     
     // Record button
-    let record_x = 50;
+    let record_x = base_x;
     if state.mouse.x >= record_x as f32 && state.mouse.x <= (record_x + button_width) as f32 &&
        state.mouse.y >= button_y as f32 && state.mouse.y <= (button_y + button_height) as f32 {
         
@@ -979,10 +982,13 @@ fn draw_number_value(x: usize, y: usize, value: u8, sprites: &Sprites, buffer: &
 pub fn draw_control_buttons(state: &State, buffer: &mut Vec<u32>) {
     let button_width = 60;
     let button_height = 30;
-    let button_y = 50;
+    let button_y = 180; // Directly above the displays (display_y - 20)
+    
+    // Align with note display X position: 1 * 64 = 64
+    let base_x = 66; // Same X as note display terminal
     
     // Record button
-    let record_x = 50;
+    let record_x = base_x;
     let record_color = match state.recording_state {
         crate::state::RecordingState::Recording => 0xFFFF0000, // Red when recording
         _ => 0xFF666666, // Gray when not recording
