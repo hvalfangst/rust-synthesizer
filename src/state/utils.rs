@@ -142,6 +142,8 @@ use crate::waveforms::adsr_envelope::ADSREnvelope;
         state.decrease_release();
     }
 
+    // Handle playback of recorded notes
+    handle_playback(state, sink);
 }
 
 /// Handles mouse input for all interactive elements
@@ -193,7 +195,7 @@ pub fn handle_mouse_input(state: &mut State, window: &mut Window, sink: &mut Sin
     handle_waveform_display_mouse(state);
     
     // Handle control button interactions
-    handle_control_buttons_mouse(state);
+    handle_control_buttons_mouse(state, sink);
 }
 
 /// Handle mouse interactions with ADSR faders
@@ -404,7 +406,7 @@ fn handle_waveform_display_mouse(state: &mut State) {
 }
 
 /// Handle mouse interactions with control buttons
-fn handle_control_buttons_mouse(state: &mut State) {
+fn handle_control_buttons_mouse(state: &mut State, sink: &mut Sink) {
     // Control button positions - aligned with note display terminal (top left area)
     let button_width = 60;
     let button_height = 30;
@@ -447,12 +449,94 @@ fn handle_control_buttons_mouse(state: &mut State) {
        state.mouse.y >= button_y as f32 && state.mouse.y <= (button_y + button_height) as f32 {
         
         if state.mouse.left_clicked {
+            // Stop all audio immediately
+            sink.stop();
+            
+            // Stop recording and playback
             state.stop_recording();
             state.stop_playback();
+            
+            // Clear any pressed keys and reset audio state
+            state.pressed_key = None;
+            state.current_frequency = None;
+            state.key_release_time = None;
+            
+            // Set glow effect for visual feedback
+            state.stop_button_glow_time = Some(std::time::Instant::now());
         }
     }
 }
 
+/// Handle playback of recorded notes during playback mode
+fn handle_playback(state: &mut State, sink: &mut Sink) {
+    if state.recording_state != crate::state::RecordingState::Playing {
+        return;
+    }
+    
+    let Some(playback_start) = state.playback_start_time else {
+        return;
+    };
+    
+    if state.recorded_notes.is_empty() {
+        return;
+    }
+    
+    let current_time = playback_start.elapsed().as_secs_f32();
+    
+    // Clone the recorded notes to avoid borrowing issues
+    let recorded_notes = state.recorded_notes.clone();
+    
+    // Find the total duration of the recording
+    let max_end_time = recorded_notes.iter()
+        .map(|note| note.timestamp + note.duration)
+        .fold(0.0f32, f32::max);
+    
+    // Loop the playback - restart if we've reached the end
+    let loop_time = if max_end_time > 0.0 {
+        current_time % max_end_time
+    } else {
+        current_time
+    };
+    
+    // Find notes that should start playing now (within a small time window)
+    static mut LAST_LOOP_TIME: f32 = -1.0;
+    let frame_time_threshold = 0.05; // 50ms threshold for frame timing
+    
+    unsafe {
+        // Check if we've looped back to the beginning
+        if loop_time < LAST_LOOP_TIME {
+            LAST_LOOP_TIME = -1.0; // Reset to catch notes at the beginning of the loop
+        }
+        
+        for recorded_note in &recorded_notes {
+            let note_start = recorded_note.timestamp;
+            
+            // Check if this note should start playing now
+            // Either: 1) We just crossed the note start time, or 2) We're at the beginning of a new loop
+            let should_trigger = (LAST_LOOP_TIME < note_start && loop_time >= note_start) ||
+                                (LAST_LOOP_TIME < 0.0 && loop_time >= note_start && loop_time < note_start + frame_time_threshold);
+            
+            if should_trigger {
+                // Store note and octave to play
+                let note_to_play = recorded_note.note;
+                let octave_to_use = recorded_note.octave;
+                
+                // Set the octave temporarily for playback
+                let original_octave = state.octave;
+                state.octave = octave_to_use;
+                
+                // Play the note
+                handle_musical_note(state, sink, note_to_play);
+                state.pressed_key = Some((Key::Q, note_to_play)); // Use Q as placeholder key for playback
+                
+                // Restore original octave
+                state.octave = original_octave;
+            }
+        }
+        
+        LAST_LOOP_TIME = loop_time;
+    }
+}
 
 /// Handles playing a musical note with a specified octave, waveform, and duration.
 ///
@@ -1003,9 +1087,27 @@ pub fn draw_control_buttons(state: &State, buffer: &mut Vec<u32>) {
     };
     draw_button(play_x, button_y, button_width, button_height, play_color, "PLAY", buffer);
     
-    // Stop button
+    // Stop button with enhanced feedback
     let stop_x = play_x + button_width + 10;
-    draw_button(stop_x, button_y, button_width, button_height, 0xFF666666, "STOP", buffer);
+    let stop_color = if let Some(glow_start) = state.stop_button_glow_time {
+        // Show intense red glow for 0.5 seconds after clicking
+        if glow_start.elapsed().as_secs_f32() < 0.5 {
+            0xFFFF0000 // Intense red glow
+        } else {
+            // After glow expires, show normal color based on state
+            match state.recording_state {
+                crate::state::RecordingState::Recording | crate::state::RecordingState::Playing => 0xFFFF4444, // Bright red when there's something to stop
+                _ => 0xFF666666, // Gray when idle
+            }
+        }
+    } else {
+        // Normal color based on state
+        match state.recording_state {
+            crate::state::RecordingState::Recording | crate::state::RecordingState::Playing => 0xFFFF4444, // Bright red when there's something to stop
+            _ => 0xFF666666, // Gray when idle
+        }
+    };
+    draw_button(stop_x, button_y, button_width, button_height, stop_color, "STOP", buffer);
 }
 
 /// Draws a single button with text

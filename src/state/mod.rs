@@ -88,6 +88,9 @@ pub struct State {
     
     // Mouse state
     pub mouse: MouseState,
+    
+    // Stop button feedback
+    pub stop_button_glow_time: Option<Instant>,
 }
 
 // Initialize Synthesizer State
@@ -119,6 +122,9 @@ impl State {
             
             // Mouse state defaults
             mouse: MouseState::new(),
+            
+            // Stop button feedback defaults
+            stop_button_glow_time: None,
         }
     }
 
