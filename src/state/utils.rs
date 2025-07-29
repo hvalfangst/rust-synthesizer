@@ -189,6 +189,9 @@ pub fn handle_mouse_input(state: &mut State, window: &mut Window, sink: &mut Sin
     // Handle octave fader interactions
     handle_octave_fader_mouse(state);
     
+    // Handle waveform display interactions
+    handle_waveform_display_mouse(state);
+    
     // Handle control button interactions
     handle_control_buttons_mouse(state);
 }
@@ -377,6 +380,25 @@ fn handle_octave_fader_mouse(state: &mut State) {
                 // Clicked in lower part - decrease octave
                 state.decrease_octave();
             }
+        }
+    }
+}
+
+/// Handle mouse interactions with waveform display
+fn handle_waveform_display_mouse(state: &mut State) {
+    // Waveform display position (matching draw_display_sprite_single exactly)
+    let display_width = 164; // sprite.width (from display sprites)
+    let display_height = 51; // sprite.height (from display sprites)
+    let display_x = 1 * display_width; // Same as drawing: 1 * sprite.width
+    let display_y = 4 * display_height + 17; // Same as drawing: 4 * sprite.height + 17
+    
+    // Check if mouse is over the waveform display
+    if state.mouse.x >= display_x as f32 && state.mouse.x <= (display_x + display_width) as f32 &&
+       state.mouse.y >= display_y as f32 && state.mouse.y <= (display_y + display_height) as f32 {
+        
+        if state.mouse.left_clicked {
+            // Toggle to next waveform (cycles through SINE -> SQUARE -> TRIANGLE -> SAWTOOTH -> SINE)
+            state.toggle_waveform();
         }
     }
 }
