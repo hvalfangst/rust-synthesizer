@@ -7,6 +7,55 @@ use crate::music_theory::{OCTAVE_LOWER_BOUND, OCTAVE_UPPER_BOUND};
 use crate::music_theory::note::Note;
 use crate::waveforms::Waveform;
 
+// Recording structures
+#[derive(Debug, Clone)]
+pub struct RecordedNote {
+    pub note: Note,
+    pub octave: i32,
+    pub timestamp: f32, // Time in seconds from recording start
+    pub duration: f32,  // How long the note was held
+}
+
+#[derive(Debug, Clone)]
+pub struct VisualNote {
+    pub note: Note,
+    pub octave: i32,
+    pub spawn_time: Instant,
+    pub fade_start_time: Option<Instant>,
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RecordingState {
+    Stopped,
+    Recording,
+    Playing,
+}
+
+#[derive(Debug, Clone)]
+pub struct MouseState {
+    pub x: f32,
+    pub y: f32,
+    pub left_pressed: bool,
+    pub left_clicked: bool,
+    pub dragging: bool,
+    pub drag_start: Option<(f32, f32)>,
+}
+
+impl MouseState {
+    pub fn new() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            left_pressed: false,
+            left_clicked: false,
+            dragging: false,
+            drag_start: None,
+        }
+    }
+}
+
 pub mod event_loop;
 mod utils;
 
@@ -28,6 +77,17 @@ pub struct State {
     pub decay: u8,   // Decay time (0 = instant, 99 = 2 seconds)
     pub sustain: u8, // Sustain level (0 = silent, 99 = full volume)
     pub release: u8, // Release time (0 = instant, 99 = 2 seconds)
+    
+    // Recording state
+    pub recording_state: RecordingState,
+    pub recorded_notes: Vec<RecordedNote>,
+    pub visual_notes: Vec<VisualNote>,
+    pub recording_start_time: Option<Instant>,
+    pub playback_start_time: Option<Instant>,
+    pub current_note_start: Option<(Instant, Note, i32)>, // (start_time, note, octave)
+    
+    // Mouse state
+    pub mouse: MouseState,
 }
 
 // Initialize Synthesizer State
@@ -48,6 +108,17 @@ impl State {
             decay: 0,    // No decay
             sustain: 99, // Full sustain level
             release: 20, // Quick release
+            
+            // Recording state defaults
+            recording_state: RecordingState::Stopped,
+            recorded_notes: Vec::new(),
+            visual_notes: Vec::new(),
+            recording_start_time: None,
+            playback_start_time: None,
+            current_note_start: None,
+            
+            // Mouse state defaults
+            mouse: MouseState::new(),
         }
     }
 
@@ -165,6 +236,81 @@ impl State {
 
     pub fn release_normalized(&self) -> f32 {
         self.release as f32 / 99.0
+    }
+
+    // Recording control methods
+    pub fn start_recording(&mut self) {
+        self.recording_state = RecordingState::Recording;
+        self.recording_start_time = Some(Instant::now());
+        self.recorded_notes.clear();
+        self.current_note_start = None;
+    }
+
+    pub fn stop_recording(&mut self) {
+        // Finish any currently held note
+        if let Some((start_time, note, octave)) = self.current_note_start.take() {
+            let duration = start_time.elapsed().as_secs_f32();
+            let timestamp = self.recording_start_time
+                .map(|start| start.elapsed().as_secs_f32() - duration)
+                .unwrap_or(0.0);
+            
+            self.recorded_notes.push(RecordedNote {
+                note,
+                octave,
+                timestamp,
+                duration,
+            });
+        }
+        
+        self.recording_state = RecordingState::Stopped;
+        self.recording_start_time = None;
+    }
+
+    pub fn start_playback(&mut self) {
+        if !self.recorded_notes.is_empty() {
+            self.recording_state = RecordingState::Playing;
+            self.playback_start_time = Some(Instant::now());
+        }
+    }
+
+    pub fn stop_playback(&mut self) {
+        self.recording_state = RecordingState::Stopped;
+        self.playback_start_time = None;
+    }
+
+    pub fn add_visual_note(&mut self, note: Note, octave: i32) {
+        // Position notes in a flowing pattern across the screen
+        let note_index = self.visual_notes.len() as f32;
+        let x = 100.0 + (note_index * 60.0) % 400.0;
+        let y = 50.0 + ((note_index * 30.0) % 150.0);
+        
+        self.visual_notes.push(VisualNote {
+            note,
+            octave,
+            spawn_time: Instant::now(),
+            fade_start_time: None,
+            x,
+            y,
+        });
+    }
+
+    pub fn update_visual_notes(&mut self) {
+        // Start fade for old notes (after 2 seconds)
+        let now = Instant::now();
+        for visual_note in &mut self.visual_notes {
+            if visual_note.fade_start_time.is_none() && now.duration_since(visual_note.spawn_time).as_secs_f32() > 2.0 {
+                visual_note.fade_start_time = Some(now);
+            }
+        }
+
+        // Remove fully faded notes (after 1 second fade)
+        self.visual_notes.retain(|note| {
+            if let Some(fade_start) = note.fade_start_time {
+                now.duration_since(fade_start).as_secs_f32() < 1.0
+            } else {
+                true
+            }
+        });
     }
 
     /// Calculate ADSR envelope amplitude at a given time since note start

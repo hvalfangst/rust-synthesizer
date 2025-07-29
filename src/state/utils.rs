@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use minifb::{Key, KeyRepeat, Window};
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window};
 use rodio::{Sink, Source};
 
 use crate::{
@@ -38,6 +38,29 @@ use crate::waveforms::adsr_envelope::ADSREnvelope;
             if window.is_key_pressed(key, KeyRepeat::No) {
                 handle_musical_note(state, sink, note);
                 state.pressed_key = Some((key, note));
+                
+
+                // Record note if recording
+                if state.recording_state == crate::state::RecordingState::Recording {
+                    // Finish previous note if there was one
+                    if let Some((start_time, prev_note, prev_octave)) = state.current_note_start.take() {
+                        let duration = start_time.elapsed().as_secs_f32();
+                        let timestamp = state.recording_start_time
+                            .map(|start| start.elapsed().as_secs_f32() - duration)
+                            .unwrap_or(0.0);
+
+                        state.recorded_notes.push(crate::state::RecordedNote {
+                            note: prev_note,
+                            octave: prev_octave,
+                            timestamp,
+                            duration,
+                        });
+                    }
+
+                    // Start recording new note
+                    state.current_note_start = Some((std::time::Instant::now(), note, state.octave));
+                }
+                
                 key_pressed = true;
                 return;
             }
@@ -119,6 +142,254 @@ use crate::waveforms::adsr_envelope::ADSREnvelope;
         state.decrease_release();
     }
 
+}
+
+/// Handles mouse input for all interactive elements
+pub fn handle_mouse_input(state: &mut State, window: &mut Window, sink: &mut Sink) {
+    // Update mouse position
+    if let Some((x, y)) = window.get_mouse_pos(MouseMode::Clamp) {
+        state.mouse.x = x;
+        state.mouse.y = y;
+    }
+
+    // Update mouse button state
+    let mouse_pressed = window.get_mouse_down(MouseButton::Left);
+    let mouse_clicked = mouse_pressed && !state.mouse.left_pressed;
+    
+    state.mouse.left_clicked = mouse_clicked;
+    state.mouse.left_pressed = mouse_pressed;
+
+    // Handle dragging
+    if mouse_clicked {
+        state.mouse.drag_start = Some((state.mouse.x, state.mouse.y));
+        state.mouse.dragging = false;
+    } else if mouse_pressed && state.mouse.drag_start.is_some() {
+        if let Some((start_x, start_y)) = state.mouse.drag_start {
+            let distance = ((state.mouse.x - start_x).powi(2) + (state.mouse.y - start_y).powi(2)).sqrt();
+            if distance > 3.0 {
+                state.mouse.dragging = true;
+            }
+        }
+    } else if !mouse_pressed {
+        state.mouse.drag_start = None;
+        state.mouse.dragging = false;
+    }
+
+    // Handle ADSR fader interactions
+    handle_adsr_fader_mouse(state, sink);
+    
+    // Handle tangent (sharp) key interactions FIRST (they have priority over regular keys)
+    if handle_tangent_mouse(state, sink) {
+        return; // Exit if a tangent was clicked
+    }
+    
+    // Handle regular keyboard key interactions
+    handle_keyboard_mouse(state, sink);
+    
+    // Handle control button interactions
+    handle_control_buttons_mouse(state);
+}
+
+/// Handle mouse interactions with ADSR faders
+fn handle_adsr_fader_mouse(state: &mut State, sink: &mut Sink) {
+    // ADSR fader positions (matching the draw_adsr_faders function)
+    let display_x = 164;
+    let display_width = 164;
+    let display_y = 4 * 51 + 17;
+    let base_x = display_x + display_width + 104;
+    let base_y = display_y;
+    
+    let fader_width = 25;
+    let fader_height = 50;
+    let fader_spacing = 30;
+
+    let adsr_params = ["attack", "decay", "sustain", "release"];
+    
+    for (i, param) in adsr_params.iter().enumerate() {
+        let fader_x = base_x + i * fader_spacing;
+        let fader_y = base_y;
+        
+        // Check if mouse is over this fader
+        if state.mouse.x >= fader_x as f32 && state.mouse.x <= (fader_x + fader_width) as f32 &&
+           state.mouse.y >= fader_y as f32 && state.mouse.y <= (fader_y + fader_height) as f32 {
+            
+            if state.mouse.left_clicked || state.mouse.dragging {
+                // Calculate new value based on mouse Y position
+                let relative_y = state.mouse.y - fader_y as f32;
+                let normalized_value = 1.0 - (relative_y / fader_height as f32).clamp(0.0, 1.0);
+                let new_value = (normalized_value * 99.0) as u8;
+                
+                // Update the appropriate ADSR parameter
+                match *param {
+                    "attack" => state.attack = new_value,
+                    "decay" => state.decay = new_value,
+                    "sustain" => state.sustain = new_value,
+                    "release" => state.release = new_value,
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// Handle mouse interactions with keyboard keys
+fn handle_keyboard_mouse(state: &mut State, sink: &mut Sink) {
+    // Virtual keyboard positioning (matching draw_idle_key_sprites exactly)
+    // Keys are drawn from i=1 to i=7, at positions i * key_width
+    let key_width = 64; // sprites.keys[KEY_IDLE].width
+    let key_height = 144; // sprites.keys[KEY_IDLE].height  
+    let key_y = 2 * key_height; // Same as drawing: 2 * sprites.keys[KEY_IDLE].height
+    
+    for (key, note, position, _) in get_key_mappings() {
+        // Match the exact drawing position: i * sprites.keys[KEY_IDLE].width where i = position
+        let key_x = position * key_width;
+        
+        // Check if mouse is over this key
+        if state.mouse.x >= key_x as f32 && state.mouse.x <= (key_x + key_width) as f32 &&
+           state.mouse.y >= key_y as f32 && state.mouse.y <= (key_y + key_height) as f32 {
+            
+            if state.mouse.left_clicked {
+                // Trigger the note
+                handle_musical_note(state, sink, note);
+                state.pressed_key = Some((key, note));
+                
+                
+                // Record note if recording
+                if state.recording_state == crate::state::RecordingState::Recording {
+                    // Finish previous note if there was one
+                    if let Some((start_time, prev_note, prev_octave)) = state.current_note_start.take() {
+                        let duration = start_time.elapsed().as_secs_f32();
+                        let timestamp = state.recording_start_time
+                            .map(|start| start.elapsed().as_secs_f32() - duration)
+                            .unwrap_or(0.0);
+                        
+                        state.recorded_notes.push(crate::state::RecordedNote {
+                            note: prev_note,
+                            octave: prev_octave,
+                            timestamp,
+                            duration,
+                        });
+                    }
+                    
+                    // Start recording new note
+                    state.current_note_start = Some((std::time::Instant::now(), note, state.octave));
+                }
+                return; // Exit after handling one key to avoid multiple triggers
+            }
+        }
+    }
+    
+}
+
+/// Handle mouse interactions with tangent (sharp) keys
+/// Returns true if a tangent was clicked, false otherwise
+fn handle_tangent_mouse(state: &mut State, sink: &mut Sink) -> bool {
+    let key_width = 64; // sprites.keys[KEY_IDLE].width as i32
+    let key_height = 144; // sprites.keys[KEY_IDLE].height
+    let tangent_width = 30; // sprites.tangents[TANGENT_IDLE].width as i32
+    let tangent_height = 96; // sprites.tangents[TANGENT_IDLE].height
+    let key_y = 2 * key_height; // Same as drawing: 2 * sprites.keys[KEY_IDLE].height
+    
+    // Tangent mappings (position -> note) - matching the tangent_map in create_tangent_map()
+    let tangent_mappings = [
+        (2, Note::CSharp, Key::Key2),   // Between keys C and D
+        (3, Note::DSharp, Key::Key3),   // Between keys D and E
+        (5, Note::FSharp, Key::Key5),   // Between keys F and G
+        (6, Note::GSharp, Key::Key6),   // Between keys G and A
+        (7, Note::ASharp, Key::Key7),   // Between keys A and B
+    ];
+    
+    for &(position, note, key) in &tangent_mappings {
+        // Calculate tangent position exactly like draw_idle_tangent_sprites:
+        // let x = (pos * key_width) - (tangent_width / 2);
+        let tangent_x = (position * key_width) - (tangent_width / 2);
+        
+        // Ensure x position is valid (same bounds check as drawing)
+        let tangent_x_final = if tangent_x >= 0 { tangent_x as usize } else { 0 };
+        
+        // Check if mouse is over this tangent
+        if state.mouse.x >= tangent_x_final as f32 && 
+           state.mouse.x <= (tangent_x_final + tangent_width as usize) as f32 &&
+           state.mouse.y >= key_y as f32 && 
+           state.mouse.y <= (key_y + tangent_height as usize) as f32 {
+            
+            if state.mouse.left_clicked {
+                // Trigger the note
+                handle_musical_note(state, sink, note);
+                state.pressed_key = Some((key, note));
+                
+                // Record note if recording
+                if state.recording_state == crate::state::RecordingState::Recording {
+                    // Finish previous note if there was one
+                    if let Some((start_time, prev_note, prev_octave)) = state.current_note_start.take() {
+                        let duration = start_time.elapsed().as_secs_f32();
+                        let timestamp = state.recording_start_time
+                            .map(|start| start.elapsed().as_secs_f32() - duration)
+                            .unwrap_or(0.0);
+                        
+                        state.recorded_notes.push(crate::state::RecordedNote {
+                            note: prev_note,
+                            octave: prev_octave,
+                            timestamp,
+                            duration,
+                        });
+                    }
+                    
+                    // Start recording new note
+                    state.current_note_start = Some((std::time::Instant::now(), note, state.octave));
+                }
+                return true; // Return true to indicate a tangent was clicked
+            }
+        }
+    }
+    false // Return false if no tangent was clicked
+}
+
+/// Handle mouse interactions with control buttons
+fn handle_control_buttons_mouse(state: &mut State) {
+    // Control button positions (we'll add these as simple rectangular areas)
+    let button_width = 60;
+    let button_height = 30;
+    let button_y = 50;
+    
+    // Record button
+    let record_x = 50;
+    if state.mouse.x >= record_x as f32 && state.mouse.x <= (record_x + button_width) as f32 &&
+       state.mouse.y >= button_y as f32 && state.mouse.y <= (button_y + button_height) as f32 {
+        
+        if state.mouse.left_clicked {
+            match state.recording_state {
+                crate::state::RecordingState::Stopped => state.start_recording(),
+                crate::state::RecordingState::Recording => state.stop_recording(),
+                crate::state::RecordingState::Playing => state.stop_playback(),
+            }
+        }
+    }
+    
+    // Play button
+    let play_x = record_x + button_width + 10;
+    if state.mouse.x >= play_x as f32 && state.mouse.x <= (play_x + button_width) as f32 &&
+       state.mouse.y >= button_y as f32 && state.mouse.y <= (button_y + button_height) as f32 {
+        
+        if state.mouse.left_clicked {
+            match state.recording_state {
+                crate::state::RecordingState::Stopped => state.start_playback(),
+                crate::state::RecordingState::Playing => state.stop_playback(),
+                _ => {},
+            }
+        }
+    }
+    
+    // Stop button
+    let stop_x = play_x + button_width + 10;
+    if state.mouse.x >= stop_x as f32 && state.mouse.x <= (stop_x + button_width) as f32 &&
+       state.mouse.y >= button_y as f32 && state.mouse.y <= (button_y + button_height) as f32 {
+        
+        if state.mouse.left_clicked {
+            state.stop_recording();
+            state.stop_playback();
+        }
+    }
 }
 
 
@@ -234,6 +505,9 @@ pub fn update_buffer_with_state(state: &State, sprites: &Sprites, window_buffer:
 
     // Draw ADSR faders
     draw_adsr_faders(state, sprites, window_buffer);
+    
+    // Draw control buttons
+    draw_control_buttons(state, window_buffer);
 
     // Draw octave fader, which display the current octave controlled by keys F1/F2
     draw_octave_fader_sprite(state.octave, sprites, window_buffer);
@@ -286,6 +560,7 @@ pub fn update_buffer_with_state(state: &State, sprites: &Sprites, window_buffer:
         // Draw idle and pressed tangents as overlay on key sprites
         draw_tangent_sprites(note_sprite_index, &tangent_map, sprites, window_buffer);
     }
+    
 }
 
 /// Returns the position of the given musical note on the keyboard.
@@ -641,6 +916,95 @@ fn draw_number_value(x: usize, y: usize, value: u8, sprites: &Sprites, buffer: &
         }
     }
 }
+
+/// Draws control buttons for recording functionality
+pub fn draw_control_buttons(state: &State, buffer: &mut Vec<u32>) {
+    let button_width = 60;
+    let button_height = 30;
+    let button_y = 50;
+    
+    // Record button
+    let record_x = 50;
+    let record_color = match state.recording_state {
+        crate::state::RecordingState::Recording => 0xFFFF0000, // Red when recording
+        _ => 0xFF666666, // Gray when not recording
+    };
+    draw_button(record_x, button_y, button_width, button_height, record_color, "REC", buffer);
+    
+    // Play button
+    let play_x = record_x + button_width + 10;
+    let play_color = match state.recording_state {
+        crate::state::RecordingState::Playing => 0xFF00FF00, // Green when playing
+        _ => 0xFF666666, // Gray when not playing
+    };
+    draw_button(play_x, button_y, button_width, button_height, play_color, "PLAY", buffer);
+    
+    // Stop button
+    let stop_x = play_x + button_width + 10;
+    draw_button(stop_x, button_y, button_width, button_height, 0xFF666666, "STOP", buffer);
+}
+
+/// Draws a single button with text
+fn draw_button(x: usize, y: usize, width: usize, height: usize, color: u32, text: &str, buffer: &mut Vec<u32>) {
+    // Draw button background
+    for dy in 0..height {
+        for dx in 0..width {
+            let pixel_x = x + dx;
+            let pixel_y = y + dy;
+            let index = pixel_y * WINDOW_WIDTH + pixel_x;
+            
+            if index < buffer.len() {
+                // Draw border
+                if dx == 0 || dx == width - 1 || dy == 0 || dy == height - 1 {
+                    buffer[index] = 0xFFFFFFFF; // White border
+                } else {
+                    buffer[index] = color;
+                }
+            }
+        }
+    }
+    
+    // Draw text (simplified - just draw the text in the center)
+    let text_x = x + width / 2 - (text.len() * 3);
+    let text_y = y + height / 2 - 3;
+    draw_simple_text(text_x, text_y, text, 0xFFFFFFFF, buffer);
+}
+
+/// Draws simple text
+fn draw_simple_text(x: usize, y: usize, text: &str, color: u32, buffer: &mut Vec<u32>) {
+    // Very simple 3x5 font for button labels
+    let font_patterns = std::collections::HashMap::from([
+        ('R', vec![0b111, 0b101, 0b111, 0b110, 0b101]),
+        ('E', vec![0b111, 0b100, 0b111, 0b100, 0b111]),
+        ('C', vec![0b111, 0b100, 0b100, 0b100, 0b111]),
+        ('P', vec![0b111, 0b101, 0b111, 0b100, 0b100]),
+        ('L', vec![0b100, 0b100, 0b100, 0b100, 0b111]),
+        ('A', vec![0b111, 0b101, 0b111, 0b101, 0b101]),
+        ('Y', vec![0b101, 0b101, 0b111, 0b010, 0b010]),
+        ('S', vec![0b111, 0b100, 0b111, 0b001, 0b111]),
+        ('T', vec![0b111, 0b010, 0b010, 0b010, 0b010]),
+        ('O', vec![0b111, 0b101, 0b101, 0b101, 0b111]),
+    ]);
+    
+    for (i, ch) in text.chars().enumerate() {
+        if let Some(pattern) = font_patterns.get(&ch) {
+            for (row, &bits) in pattern.iter().enumerate() {
+                for col in 0..3 {
+                    if (bits >> (2 - col)) & 1 == 1 {
+                        let pixel_x = x + i * 4 + col;
+                        let pixel_y = y + row;
+                        let index = pixel_y * WINDOW_WIDTH + pixel_x;
+                        
+                        if index < buffer.len() {
+                            buffer[index] = color;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 /// Draws a simple text label for the fader
 fn draw_fader_label(x: usize, y: usize, label: &str, buffer: &mut Vec<u32>) {

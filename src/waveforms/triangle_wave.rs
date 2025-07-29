@@ -1,5 +1,5 @@
 use rodio::Source;
-use std::{f32::consts::PI, time::Duration};
+use std::time::Duration;
 use crate::{
     waveforms::{MONO, SAMPLE_RATE}
 };

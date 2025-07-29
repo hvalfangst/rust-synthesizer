@@ -9,7 +9,7 @@ use crate::{
     graphics::sprites::*,
     state::{FRAME_DURATION, State},
 };
-use crate::state::utils::{draw_buffer, handle_key_presses, update_buffer_with_state};
+use crate::state::utils::{draw_buffer, handle_key_presses, handle_mouse_input, update_buffer_with_state};
 
 /// Starts the event loop for the synthesizer application, handling user input and rendering visuals.
 ///
@@ -48,6 +48,10 @@ pub fn start_event_loop(state: &mut State, sink: &mut Sink, sprites: &Sprites) {
 
         // Handle user key presses to update synthesizer state and play sound
         handle_key_presses(state, &mut window, sink);
+
+        // Handle mouse input
+        handle_mouse_input(state, &mut window, sink);
+        
 
         // Change rack index every 2 seconds by toggling between 0 and 1
         if last_rack_change.elapsed() >= Duration::from_secs(2) {
