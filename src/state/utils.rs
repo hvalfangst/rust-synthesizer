@@ -186,6 +186,9 @@ pub fn handle_mouse_input(state: &mut State, window: &mut Window, sink: &mut Sin
     // Handle regular keyboard key interactions
     handle_keyboard_mouse(state, sink);
     
+    // Handle octave fader interactions
+    handle_octave_fader_mouse(state);
+    
     // Handle control button interactions
     handle_control_buttons_mouse(state);
 }
@@ -343,6 +346,39 @@ fn handle_tangent_mouse(state: &mut State, sink: &mut Sink) -> bool {
         }
     }
     false // Return false if no tangent was clicked
+}
+
+/// Handle mouse interactions with octave fader
+fn handle_octave_fader_mouse(state: &mut State) {
+    // Octave fader position (matching draw_octave_fader_sprite exactly)
+    let key_width = 64; // sprites.keys[0].width
+    let key_height = 144; // sprites.keys[0].height
+    let fader_x = 8 * key_width + 5; // Same as drawing: 8 * sprites.keys[0].width + 5
+    let fader_y = 2 * key_height; // Same as drawing: 2 * sprites.keys[0].height
+    
+    // Octave fader dimensions (from sprites.octave_fader)
+    let fader_width = 28; // sprites.octave_fader width
+    let fader_height = 143; // sprites.octave_fader height
+    
+    // Check if mouse is over the octave fader
+    if state.mouse.x >= fader_x as f32 && state.mouse.x <= (fader_x + fader_width) as f32 &&
+       state.mouse.y >= fader_y as f32 && state.mouse.y <= (fader_y + fader_height) as f32 {
+        
+        if state.mouse.left_clicked {
+            // Calculate relative Y position within the fader
+            let relative_y = state.mouse.y - fader_y as f32;
+            let fader_center_y = fader_height as f32 / 2.0;
+            
+            // If clicked in upper half, increase octave; if lower half, decrease octave
+            if relative_y < fader_center_y {
+                // Clicked in upper part - increase octave
+                state.increase_octave();
+            } else {
+                // Clicked in lower part - decrease octave
+                state.decrease_octave();
+            }
+        }
+    }
 }
 
 /// Handle mouse interactions with control buttons
