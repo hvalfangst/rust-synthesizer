@@ -10,6 +10,7 @@ mod state;
 mod music_theory;
 mod graphics;
 mod input;
+mod effects;
 
 fn main() {
 

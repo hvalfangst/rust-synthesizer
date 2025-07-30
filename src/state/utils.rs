@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use minifb::Key;
 use rodio::{Sink, Source};
+use crate::effects::{EffectWrapper, AudioEffect, DelayEffect, ReverbEffect, FlangerEffect};
+use std::time::Duration;
 
 use crate::graphics::draw::{draw_adsr_faders, draw_control_buttons, draw_display_sprite_single, draw_idle_key_sprites, draw_idle_tangent_sprites, draw_note_sprite, draw_octave_fader_sprite, draw_pressed_key_sprite, draw_rack_sprite, draw_tangent_sprites};
 use crate::graphics::sprites::Sprites;
@@ -13,6 +15,69 @@ use crate::waveforms::sine_wave::SineWave;
 use crate::waveforms::square_wave::SquareWave;
 use crate::waveforms::triangle_wave::TriangleWave;
 use crate::waveforms::{Waveform, AMPLITUDE};
+
+/// Effects processor that applies enabled effects to an audio source
+struct EffectsProcessor<S: Source<Item = f32>> {
+    source: S,
+    delay_effect: DelayEffect,
+    reverb_effect: ReverbEffect,
+    flanger_effect: FlangerEffect,
+    delay_enabled: bool,
+    reverb_enabled: bool,
+    flanger_enabled: bool,
+}
+
+impl<S: Source<Item = f32>> EffectsProcessor<S> {
+    fn new(source: S, state: &State) -> Self {
+        Self {
+            source,
+            delay_effect: DelayEffect::new(250.0, 0.3, 0.3, 44100), // Copy parameters from state
+            reverb_effect: ReverbEffect::new(0.5, 0.5, 0.3, 44100),
+            flanger_effect: FlangerEffect::new(0.5, 0.7, 0.1, 0.5, 44100),
+            delay_enabled: state.delay_enabled,
+            reverb_enabled: state.reverb_enabled,
+            flanger_enabled: state.flanger_enabled,
+        }
+    }
+}
+
+impl<S: Source<Item = f32>> Iterator for EffectsProcessor<S> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.source.next().map(|mut sample| {
+            // Apply effects in series: Delay -> Reverb -> Flanger
+            if self.delay_enabled {
+                sample = self.delay_effect.process_sample(sample);
+            }
+            if self.reverb_enabled {
+                sample = self.reverb_effect.process_sample(sample);
+            }
+            if self.flanger_enabled {
+                sample = self.flanger_effect.process_sample(sample);
+            }
+            sample
+        })
+    }
+}
+
+impl<S: Source<Item = f32>> Source for EffectsProcessor<S> {
+    fn current_frame_len(&self) -> Option<usize> {
+        self.source.current_frame_len()
+    }
+
+    fn channels(&self) -> u16 {
+        self.source.channels()
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.source.sample_rate()
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        self.source.total_duration()
+    }
+}
 use crate::{
     graphics::constants::*,
     graphics::waveform_display::generate_waveform_display
@@ -91,10 +156,18 @@ pub fn handle_musical_note(state: &mut State, sink: &mut Sink, note: Note) {
     };
 
     // Create Source from our Synth with ADSR envelope - envelope handles its own termination
-    let source = synth.amplify(AMPLITUDE);
+    let mut source = synth.amplify(AMPLITUDE);
+
+    // Apply effects chain if any are enabled
+    let source_with_effects: Box<dyn Source<Item=f32> + Send> = if state.delay_enabled || state.reverb_enabled || state.flanger_enabled {
+        // Create an effects-processing source
+        Box::new(EffectsProcessor::new(source, state))
+    } else {
+        Box::new(source)
+    };
 
     // Play the sound source immediately, replacing any queued audio
-    let _result = sink.append(source);
+    let _result = sink.append(source_with_effects);
 }
 
 
@@ -134,6 +207,9 @@ pub fn update_buffer_with_state(state: &State, sprites: &Sprites, window_buffer:
     
     // Draw control buttons
     draw_control_buttons(state, window_buffer);
+    
+    // Draw effects buttons
+    draw_effects_buttons(state, window_buffer);
 
     // Draw octave fader, which display the current octave controlled by keys F1/F2
     draw_octave_fader_sprite(state.octave, sprites, window_buffer);
@@ -265,4 +341,138 @@ pub fn create_tangent_map() -> HashMap<i32, usize> {
         (7, NOTE_A_SHARP),   // Between keys A and B
     ].iter().cloned().collect();
     tangent_map
+}
+
+/// Draws effects buttons (Delay, Reverb, Flanger) between waveform display and ADSR faders
+pub fn draw_effects_buttons(state: &State, buffer: &mut Vec<u32>) {
+    // Position between waveform display and ADSR faders
+    let display_end_x = 164 + 164; // 328
+    let adsr_start_x = 164 + 164 + 104; // 432
+    let available_width = adsr_start_x - display_end_x; // 104px
+    
+    let button_width = 30;
+    let button_height = 20;
+    let button_spacing = (available_width - (3 * button_width)) / 4; // Equal spacing
+    let base_x = display_end_x + button_spacing;
+    let base_y = 4 * 51 + 17 + 15; // Same Y as display + offset
+    
+    let effects = [
+        ("DLY", state.delay_enabled, 0xFF4444FF), // Blue for delay
+        ("REV", state.reverb_enabled, 0xFF44FF44), // Green for reverb  
+        ("FLG", state.flanger_enabled, 0xFFFF4444), // Red for flanger
+    ];
+    
+    for (i, (label, enabled, base_color)) in effects.iter().enumerate() {
+        let x = base_x + i * (button_width + button_spacing);
+        
+        // Choose colors based on state
+        let (bg_color, border_color, text_color) = if *enabled {
+            (*base_color, 0xFFFFFFFF, 0xFFFFFFFF) // Bright when enabled
+        } else {
+            (0xFF333333, 0xFF666666, 0xFF999999) // Dark when disabled
+        };
+        
+        // Draw button background and border with rounded corners effect
+        draw_effects_button_shape(x, base_y, button_width, button_height, bg_color, border_color, buffer);
+        
+        // Draw label text centered
+        let text_x = x + button_width / 2 - (label.len() * 2); // Rough centering
+        let text_y = base_y + button_height / 2 - 3;
+        draw_effects_button_text(text_x, text_y, label, text_color, buffer);
+    }
+}
+
+/// Draw a button shape with rounded corners effect and glow
+fn draw_effects_button_shape(x: usize, y: usize, width: usize, height: usize, bg_color: u32, border_color: u32, buffer: &mut Vec<u32>) {
+    // Draw main button body
+    for dy in 1..height-1 {
+        for dx in 1..width-1 {
+            let pixel_x = x + dx;
+            let pixel_y = y + dy;
+            let index = pixel_y * WINDOW_WIDTH + pixel_x;
+            
+            if index < buffer.len() {
+                buffer[index] = bg_color;
+            }
+        }
+    }
+    
+    // Draw border with rounded corner effect
+    for dy in 0..height {
+        for dx in 0..width {
+            let pixel_x = x + dx;
+            let pixel_y = y + dy;
+            let index = pixel_y * WINDOW_WIDTH + pixel_x;
+            
+            if index < buffer.len() {
+                // Skip corners for rounded effect
+                let is_corner = (dx == 0 || dx == width - 1) && (dy == 0 || dy == height - 1);
+                if !is_corner && (dx == 0 || dx == width - 1 || dy == 0 || dy == height - 1) {
+                    buffer[index] = border_color;
+                }
+            }
+        }
+    }
+    
+    // Add subtle highlight on top edge
+    for dx in 2..width-2 {
+        let pixel_x = x + dx;
+        let pixel_y = y + 1;
+        let index = pixel_y * WINDOW_WIDTH + pixel_x;
+        
+        if index < buffer.len() {
+            let highlight = blend_colors(bg_color, 0xFFFFFFFF, 0.3);
+            buffer[index] = highlight;
+        }
+    }
+}
+
+/// Draw text for effects buttons using a simple bitmap font
+fn draw_effects_button_text(x: usize, y: usize, text: &str, color: u32, buffer: &mut Vec<u32>) {
+    // Simple 3x5 bitmap font patterns for effect labels
+    let font_patterns = std::collections::HashMap::from([
+        ('D', vec![0b111, 0b101, 0b101, 0b101, 0b111]),
+        ('L', vec![0b100, 0b100, 0b100, 0b100, 0b111]),
+        ('Y', vec![0b101, 0b101, 0b010, 0b010, 0b010]),
+        ('R', vec![0b111, 0b101, 0b111, 0b110, 0b101]),
+        ('E', vec![0b111, 0b100, 0b111, 0b100, 0b111]),
+        ('V', vec![0b101, 0b101, 0b101, 0b101, 0b010]),
+        ('F', vec![0b111, 0b100, 0b111, 0b100, 0b100]),
+        ('G', vec![0b111, 0b100, 0b101, 0b101, 0b111]),
+    ]);
+    
+    for (i, ch) in text.chars().enumerate() {
+        if let Some(pattern) = font_patterns.get(&ch) {
+            for (row, &bits) in pattern.iter().enumerate() {
+                for col in 0..3 {
+                    if (bits >> (2 - col)) & 1 == 1 {
+                        let pixel_x = x + i * 4 + col;
+                        let pixel_y = y + row;
+                        let index = pixel_y * WINDOW_WIDTH + pixel_x;
+                        
+                        if index < buffer.len() {
+                            buffer[index] = color;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Blend two colors together
+fn blend_colors(color1: u32, color2: u32, factor: f32) -> u32 {
+    let r1 = ((color1 >> 16) & 0xFF) as f32;
+    let g1 = ((color1 >> 8) & 0xFF) as f32;
+    let b1 = (color1 & 0xFF) as f32;
+    
+    let r2 = ((color2 >> 16) & 0xFF) as f32;
+    let g2 = ((color2 >> 8) & 0xFF) as f32;
+    let b2 = (color2 & 0xFF) as f32;
+    
+    let r = (r1 * (1.0 - factor) + r2 * factor) as u32;
+    let g = (g1 * (1.0 - factor) + g2 * factor) as u32;
+    let b = (b1 * (1.0 - factor) + b2 * factor) as u32;
+    
+    0xFF000000 | (r << 16) | (g << 8) | b
 }

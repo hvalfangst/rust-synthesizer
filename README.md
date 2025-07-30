@@ -1,9 +1,19 @@
-# Rust Synthesizer with GUI
+# Rust Synthesizer with GUI & Audio Effects
 
-Software synthesizer programmed in Rust. Built using [rodio](https://crates.io/crates/rodio) for audio playback, 
-[minifb](https://crates.io/crates/minifb) for user input handling, 
-and [image](https://crates.io/crates/image) for sprite rendering. 
-All visual assets are made by me, Hichael, using [Aseprite](https://www.aseprite.org/).
+Software synthesizer programmed in Rust. Built using [rodio](https://crates.io/crates/rodio) for audio playback, [minifb](https://crates.io/crates/minifb) for user input handling, and [image](https://crates.io/crates/image) for sprite rendering. All visual assets are made by me, Hichael, using [Aseprite](https://www.aseprite.org/).
+
+## Features
+
+**Multiple Waveforms**: Sine, Square, Triangle, and Sawtooth waves
+
+**ADSR Envelope**: Full Attack, Decay, Sustain, Release control
+
+**Real-time Audio Effects**: Delay, Reverb, and Flanger
+
+**Recording & Playback**: Record and play them performances in loops
+
+**Interactive GUI**: Mouse and keyboard controls for all parameters
+
 
 ## Requirements
 * [Rust](https://www.rust-lang.org/tools/install)
@@ -68,3 +78,34 @@ ADSR Envelope Control:
     F8: Increase Sustain
     F9: Decrease Release (0-99, controls fade-out time)
     0:  Increase Release
+
+Audio Effects Control:
+
+    F10: Toggle Delay Effect (250ms delay with feedback)
+    F11: Toggle Reverb Effect (Schroeder reverb algorithm)
+    F12: Toggle Flanger Effect (Modulated delay with LFO)
+
+Recording & Playback:
+
+    Mouse: Click REC button to start/stop recording
+    Mouse: Click PLAY button to playback recorded notes (loops automatically)
+    Mouse: Click STOP button to halt all audio and recording
+
+## Mouse Controls
+
+
+
+**Piano Keys**: Click white keys (C, D, E, F, G, A, B) to play notes
+
+**Sharp Keys**: Click black keys (C#, D#, F#, G#, A#) for sharp notes  
+
+**Waveform Display**: Click to cycle through waveforms (Sine → Square → Triangle → Sawtooth)
+
+**Octave Fader**: Click upper half to increase octave, lower half to decrease
+
+**ADSR Faders**: Click and drag the Attack, Decay, Sustain, Release faders
+
+**Effects Buttons**: Click DLY, REV, FLG buttons to toggle audio effects
+
+**Control Buttons**: Click REC, PLAY, STOP for recording functionality
+

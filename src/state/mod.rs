@@ -6,6 +6,7 @@ use crate::graphics::constants::{WAVEFORM_SAWTOOTH, WAVEFORM_SINE, WAVEFORM_SQUA
 use crate::music_theory::{OCTAVE_LOWER_BOUND, OCTAVE_UPPER_BOUND};
 use crate::music_theory::note::Note;
 use crate::waveforms::Waveform;
+use crate::effects::{DelayEffect, ReverbEffect, FlangerEffect};
 
 // Recording structures
 #[derive(Debug, Clone)]
@@ -92,6 +93,14 @@ pub struct State {
     
     // Stop button feedback
     pub stop_button_glow_time: Option<Instant>,
+    
+    // Audio effects
+    pub delay_enabled: bool,
+    pub reverb_enabled: bool,
+    pub flanger_enabled: bool,
+    pub delay_effect: DelayEffect,
+    pub reverb_effect: ReverbEffect,
+    pub flanger_effect: FlangerEffect,
 }
 
 // Initialize Synthesizer State
@@ -126,6 +135,14 @@ impl State {
             
             // Stop button feedback defaults
             stop_button_glow_time: None,
+            
+            // Audio effects defaults
+            delay_enabled: false,
+            reverb_enabled: false,
+            flanger_enabled: false,
+            delay_effect: DelayEffect::new(250.0, 0.3, 0.3, 44100), // 250ms delay, 30% feedback, 30% mix
+            reverb_effect: ReverbEffect::new(0.5, 0.5, 0.3, 44100), // Medium room, moderate damping, 30% mix
+            flanger_effect: FlangerEffect::new(0.5, 0.7, 0.1, 0.5, 44100), // 0.5Hz LFO, 70% depth, 10% feedback, 50% mix
         }
     }
 

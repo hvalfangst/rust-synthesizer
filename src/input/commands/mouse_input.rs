@@ -3,6 +3,7 @@ use rodio::Sink;
 use crate::music_theory::note::Note;
 use crate::state::State;
 use crate::state::utils::{get_key_mappings, handle_musical_note};
+use crate::effects::AudioEffect;
 use super::super::InputCommand;
 
 /// Command for handling all mouse interactions
@@ -63,6 +64,9 @@ impl InputCommand for MouseInputCommand {
         
         // Handle control button interactions
         handle_control_buttons_mouse(state, sink);
+        
+        // Handle effects button interactions
+        handle_effects_buttons_mouse(state, sink);
     }
 }
 
@@ -331,6 +335,59 @@ pub fn handle_control_buttons_mouse(state: &mut State, sink: &mut Sink) {
 
             // Set glow effect for visual feedback
             state.stop_button_glow_time = Some(std::time::Instant::now());
+        }
+    }
+}
+
+/// Handle mouse interactions with effects buttons
+pub fn handle_effects_buttons_mouse(state: &mut State, sink: &mut Sink) {
+    // Match the positioning from draw_effects_buttons
+    let display_end_x = 164 + 164; // 328
+    let adsr_start_x = 164 + 164 + 104; // 432
+    let available_width = adsr_start_x - display_end_x; // 104px
+    
+    let button_width = 30;
+    let button_height = 20;
+    let button_spacing = (available_width - (3 * button_width)) / 4;
+    let base_x = display_end_x + button_spacing;
+    let base_y = 4 * 51 + 17 + 15;
+    
+    // Check each effect button
+    for i in 0..3 {
+        let button_x = base_x + i * (button_width + button_spacing);
+        
+        // Check if mouse is over this button
+        if state.mouse.x >= button_x as f32 && state.mouse.x <= (button_x + button_width) as f32 &&
+           state.mouse.y >= base_y as f32 && state.mouse.y <= (base_y + button_height) as f32 {
+            
+            if state.mouse.left_clicked {
+                // Toggle the appropriate effect
+                match i {
+                    0 => {
+                        // Delay button
+                        state.delay_enabled = !state.delay_enabled;
+                        if !state.delay_enabled {
+                            state.delay_effect.reset();
+                        }
+                    },
+                    1 => {
+                        // Reverb button
+                        state.reverb_enabled = !state.reverb_enabled;
+                        if !state.reverb_enabled {
+                            state.reverb_effect.reset();
+                        }
+                    },
+                    2 => {
+                        // Flanger button
+                        state.flanger_enabled = !state.flanger_enabled;
+                        if !state.flanger_enabled {
+                            state.flanger_effect.reset();
+                        }
+                    },
+                    _ => {}
+                }
+                return; // Exit after handling one button
+            }
         }
     }
 }

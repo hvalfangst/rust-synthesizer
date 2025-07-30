@@ -56,6 +56,11 @@ impl InputHandler {
         self.register_keyboard_command(Key::F8, Arc::new(ADSRControlCommand::new_sustain(true)));   // increase sustain
         self.register_keyboard_command(Key::F9, Arc::new(ADSRControlCommand::new_release(false)));  // decrease release
         self.register_keyboard_command(Key::Key0, Arc::new(ADSRControlCommand::new_release(true))); // increase release
+        
+        // Effects controls
+        self.register_keyboard_command(Key::F10, Arc::new(EffectsToggleCommand::new_delay()));   // toggle delay
+        self.register_keyboard_command(Key::F11, Arc::new(EffectsToggleCommand::new_reverb()));  // toggle reverb
+        self.register_keyboard_command(Key::F12, Arc::new(EffectsToggleCommand::new_flanger())); // toggle flanger
     }
     
     /// Register a keyboard command for a specific key
