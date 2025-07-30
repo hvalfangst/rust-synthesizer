@@ -140,8 +140,8 @@ impl State {
             delay_enabled: false,
             reverb_enabled: false,
             flanger_enabled: false,
-            delay_effect: DelayEffect::new(250.0, 0.3, 0.3, 44100), // 250ms delay, 30% feedback, 30% mix
-            reverb_effect: ReverbEffect::new(0.5, 0.5, 0.3, 44100), // Medium room, moderate damping, 30% mix
+            delay_effect: DelayEffect::new(300.0, 0.55, 0.5, 44100), // 300ms delay, 55% feedback, 50% mix
+            reverb_effect: ReverbEffect::new(0.7, 0.4, 0.6, 44100), // Large room, light damping, 60% mix  
             flanger_effect: FlangerEffect::new(0.5, 0.7, 0.1, 0.5, 44100), // 0.5Hz LFO, 70% depth, 10% feedback, 50% mix
         }
     }

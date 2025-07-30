@@ -31,8 +31,8 @@ impl<S: Source<Item = f32>> EffectsProcessor<S> {
     fn new(source: S, state: &State) -> Self {
         Self {
             source,
-            delay_effect: DelayEffect::new(250.0, 0.3, 0.3, 44100), // Copy parameters from state
-            reverb_effect: ReverbEffect::new(0.5, 0.5, 0.3, 44100),
+            delay_effect: DelayEffect::new(300.0, 0.55, 0.5, 44100), // Enhanced parameters
+            reverb_effect: ReverbEffect::new(0.7, 0.4, 0.6, 44100),  // Larger room, more wet
             flanger_effect: FlangerEffect::new(0.5, 0.7, 0.1, 0.5, 44100),
             delay_enabled: state.delay_enabled,
             reverb_enabled: state.reverb_enabled,
