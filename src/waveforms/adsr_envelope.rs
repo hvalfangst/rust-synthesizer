@@ -39,7 +39,7 @@ where
             release_samples: ((release * sample_rate) as usize).max(1), // Minimum 1 sample for release
             release_start_sample: None,
             is_released: false,
-            max_sustain_samples: (3.0 * sample_rate) as usize, // Auto-release after 3 seconds of sustain
+            max_sustain_samples: ((release * 0.5 + 0.05) * sample_rate) as usize, // Shorter auto-release based on release setting
         }
     }
 

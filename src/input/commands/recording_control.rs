@@ -25,14 +25,21 @@ impl InputCommand for RecordingControlCommand {
             }
         }
         
-        // If no musical key is pressed, start the fade-out effect but keep the visual key displayed
+        // If no musical key is pressed, handle key release based on ADSR settings
         if !key_pressed && state.pressed_key.is_some() && state.key_release_time.is_none() {
+            // For very quick release settings (0-10), stop immediately
+            if state.release <= 10 {
+                sink.stop(); // Immediate stop for instant release
+            }
+            // For other settings, let ADSR envelope handle the release naturally
+            // The ADSR envelope will auto-release after max_sustain_samples 
             state.key_release_time = Some(std::time::Instant::now());
         }
         
-        // Clear frequency after fade-out is complete
+        // Clear visual display quickly after audio has stopped
         if let Some(release_time) = state.key_release_time {
-            if release_time.elapsed().as_secs_f32() > 2.0 {
+            let visual_clear_time = (state.release_normalized() * 2.0).max(0.1); // Minimum 100ms for visual feedback
+            if release_time.elapsed().as_secs_f32() > visual_clear_time {
                 state.current_frequency = None;
                 state.key_release_time = None;
             }

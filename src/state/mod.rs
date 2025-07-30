@@ -108,18 +108,18 @@ impl State {
     pub(crate) fn new() -> Self {
         State {
             octave: 4, // Set default octave to 4
-            waveform: Waveform::SINE, // Set default waveform to Sine
+            waveform: Waveform::SQUARE, // Set default waveform to Square
             pressed_key: None, // Default is no key
-            waveform_sprite_index: WAVEFORM_SINE, // Set default waveform sprite index to Sine
+            waveform_sprite_index: WAVEFORM_SQUARE, // Set default waveform sprite index to Square
             filter_factor: 1.0, // Set default cutoff to 1.0
             lpf_active: 0, // Default for LPF is deactivated
             current_frequency: None, // No frequency being played initially
             animation_start_time: Instant::now(), // Initialize animation time
             key_release_time: None, // No key released initially
-            // ADSR defaults for immediate sound
-            attack: 0,   // Instant attack
-            decay: 0,    // No decay
-            sustain: 99, // Full sustain level
+            // ADSR defaults for pluck-like instant sound
+            attack: 0,   // Instant attack (no delayed PAD effect)
+            decay: 0,    // No decay (sounds does not fade to sustain level)
+            sustain: 50, // Half sustain level (sound stays at half volume while key held)
             release: 20, // Quick release
             
             // Recording state defaults
