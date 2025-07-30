@@ -1,9 +1,9 @@
 # Rust Synthesizer with GUI
 
-Software synthesizer programmed in Rust featuring real-time ADSR envelope control and multiple waveforms. Built using [rodio](https://crates.io/crates/rodio) for audio playback, 
+Software synthesizer programmed in Rust. Built using [rodio](https://crates.io/crates/rodio) for audio playback, 
 [minifb](https://crates.io/crates/minifb) for user input handling, 
 and [image](https://crates.io/crates/image) for sprite rendering. 
-All visual assets are custom-made using [Aseprite](https://www.aseprite.org/).
+All visual assets are made by me, Hichael, using [Aseprite](https://www.aseprite.org/).
 
 ## Requirements
 * [Rust](https://www.rust-lang.org/tools/install)

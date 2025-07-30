@@ -57,21 +57,22 @@ impl MouseState {
 }
 
 pub mod event_loop;
-mod utils;
+pub mod utils;
+pub mod updaters;
 
 const FRAME_DURATION: Duration = Duration::from_millis(16); // Approximately 60Hz refresh rate
 
 // Synthesizer State Struct
 pub struct State {
-    octave: i32,
-    waveform: Waveform,
-    pressed_key: Option<(Key, Note)>,
+    pub(crate) octave: i32,
+    pub(crate) waveform: Waveform,
+    pub(crate) pressed_key: Option<(Key, Note)>,
     waveform_sprite_index: usize,
-    filter_factor: f32,
-    lpf_active: usize,
-    current_frequency: Option<f32>, // Track current playing frequency
-    animation_start_time: Instant, // When the animation started
-    key_release_time: Option<Instant>, // When the key was released for fade-out
+    pub(crate) filter_factor: f32,
+    pub(crate) lpf_active: usize,
+    pub(crate) current_frequency: Option<f32>, // Track current playing frequency
+    pub(crate) animation_start_time: Instant, // When the animation started
+    pub(crate) key_release_time: Option<Instant>, // When the key was released for fade-out
     // ADSR parameters (0 to 99)
     pub attack: u8,  // Attack time (0 = instant, 99 = 2 seconds)
     pub decay: u8,   // Decay time (0 = instant, 99 = 2 seconds)

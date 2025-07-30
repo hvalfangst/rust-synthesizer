@@ -1,3 +1,4 @@
+use crate::graphics::draw::draw_buffer;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -8,13 +9,15 @@ use crate::{
     graphics::constants::*,
     graphics::sprites::*,
     state::{FRAME_DURATION, State},
+    input::handler::InputHandler,
 };
-use crate::state::utils::{draw_buffer, handle_key_presses, handle_mouse_input, update_buffer_with_state};
+use crate::state::utils::{update_buffer_with_state};
+use crate::state::updaters::{AudioStateUpdater, VisualStateUpdater, RecordingStateUpdater, MouseStateUpdater};
 
 /// Starts the event loop for the synthesizer application, handling user input and rendering visuals.
 ///
 /// # Parameters
-/// - `state`: Mutable reference to `SynthesizerState`, which manages the current state of the synthesizer.
+/// - `state`: Mutable reference to `State`, which manages the current state of the synthesizer.
 /// - `sink`: Mutable reference to `Sink`, the audio sink responsible for playing sound.
 /// - `sprites`: Reference to `Sprites`, containing all graphical assets used for rendering visuals.
 ///
@@ -27,7 +30,7 @@ use crate::state::utils::{draw_buffer, handle_key_presses, handle_mouse_input, u
 pub fn start_event_loop(state: &mut State, sink: &mut Sink, sprites: &Sprites) {
     // Create a window with error handling
     let mut window = Window::new(
-        "Rust Synthesizer 0.5",
+        "Rust Synthesizer 1.0",
         WINDOW_WIDTH,
         WINDOW_HEIGHT,
         WindowOptions::default(),
@@ -38,6 +41,12 @@ pub fn start_event_loop(state: &mut State, sink: &mut Sink, sprites: &Sprites) {
     let mut rack_index = 0; // Default rack sprite index
     let mut last_rack_change = Instant::now(); // Records time of last rack index change
 
+    // Initialize command pattern handlers
+    let input_handler = InputHandler::new();
+    let audio_updater = AudioStateUpdater::new();
+    let visual_updater = VisualStateUpdater::new();
+    let recording_updater = RecordingStateUpdater::new();
+    let mouse_updater = MouseStateUpdater::new();
 
     // Initialize window buffer to store pixel data
     let mut window_buffer = vec![0; WINDOW_WIDTH * WINDOW_HEIGHT];
@@ -46,11 +55,14 @@ pub fn start_event_loop(state: &mut State, sink: &mut Sink, sprites: &Sprites) {
     while window.is_open() && !window.is_key_down(key::Escape) {
         let start = Instant::now(); // Record start time for frame timing
 
-        // Handle user key presses to update synthesizer state and play sound
-        handle_key_presses(state, &mut window, sink);
+        // Handle all input using command pattern
+        input_handler.handle_input(state, &mut window, sink);
 
-        // Handle mouse input
-        handle_mouse_input(state, &mut window, sink);
+        // Update state using updater pattern
+        audio_updater.update(state, sink);
+        visual_updater.update(state);
+        recording_updater.update(state);
+        mouse_updater.update(state);
         
 
         // Change rack index every 2 seconds by toggling between 0 and 1

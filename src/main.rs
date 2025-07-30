@@ -5,7 +5,11 @@ use crate::{
     graphics::sprites::Sprites
 };
 
-mod waveforms;mod state;mod music_theory;mod graphics;
+mod waveforms;
+mod state;
+mod music_theory;
+mod graphics;
+mod input;
 
 fn main() {
 
