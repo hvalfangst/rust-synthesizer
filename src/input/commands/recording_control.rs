@@ -47,7 +47,7 @@ impl InputCommand for RecordingControlCommand {
     }
 }
 
-/// Handle playback of recorded notes during playback mode
+/// Handle multi-track playback of recorded loops during playback mode
 pub fn handle_playback(state: &mut State, sink: &mut Sink) {
     if state.recording_state != crate::state::RecordingState::Playing {
         return;
@@ -57,28 +57,41 @@ pub fn handle_playback(state: &mut State, sink: &mut Sink) {
         return;
     };
 
-    if state.recorded_notes.is_empty() {
+    let current_time = playback_start.elapsed().as_secs_f32();
+    
+    // Get all tracks that are currently set to playing
+    let playing_tracks = state.playing_tracks();
+    
+    // Check if any playing tracks have recorded notes
+    let has_recorded_content = playing_tracks.iter()
+        .any(|&track_id| !state.tracks[track_id].recorded_notes.is_empty());
+        
+    if !has_recorded_content {
         return;
     }
 
-    let current_time = playback_start.elapsed().as_secs_f32();
-
-    // Clone the recorded notes to avoid borrowing issues
-    let recorded_notes = state.recorded_notes.clone();
-
-    // Find the total duration of the recording
-    let max_end_time = recorded_notes.iter()
-        .map(|note| note.timestamp + note.duration)
+    // Find the maximum loop duration across all playing tracks
+    let max_loop_duration = playing_tracks.iter()
+        .map(|&track_id| {
+            let track = &state.tracks[track_id];
+            if track.recorded_notes.is_empty() {
+                0.0
+            } else {
+                track.recorded_notes.iter()
+                    .map(|note| note.timestamp + note.duration)
+                    .fold(0.0f32, f32::max)
+            }
+        })
         .fold(0.0f32, f32::max);
 
-    // Loop the playback - restart if we've reached the end
-    let loop_time = if max_end_time > 0.0 {
-        current_time % max_end_time
+    // Calculate loop time
+    let loop_time = if max_loop_duration > 0.0 {
+        current_time % max_loop_duration
     } else {
         current_time
     };
 
-    // Find notes that should start playing now (within a small time window)
+    // Track timing for note triggering
     static mut LAST_LOOP_TIME: f32 = -1.0;
     let frame_time_threshold = 0.05; // 50ms threshold for frame timing
 
@@ -88,29 +101,27 @@ pub fn handle_playback(state: &mut State, sink: &mut Sink) {
             LAST_LOOP_TIME = -1.0; // Reset to catch notes at the beginning of the loop
         }
 
-        for recorded_note in &recorded_notes {
-            let note_start = recorded_note.timestamp;
+        // Play notes from all playing tracks
+        for &track_id in &playing_tracks {
+            let track = &state.tracks[track_id];
+            
+            for recorded_note in &track.recorded_notes {
+                let note_start = recorded_note.timestamp;
 
-            // Check if this note should start playing now
-            // Either: 1) We just crossed the note start time, or 2) We're at the beginning of a new loop
-            let should_trigger = (LAST_LOOP_TIME < note_start && loop_time >= note_start) ||
-                (LAST_LOOP_TIME < 0.0 && loop_time >= note_start && loop_time < note_start + frame_time_threshold);
+                // Check if this note should start playing now
+                let should_trigger = (LAST_LOOP_TIME < note_start && loop_time >= note_start) ||
+                    (LAST_LOOP_TIME < 0.0 && loop_time >= note_start && loop_time < note_start + frame_time_threshold);
 
-            if should_trigger {
-                // Store note and octave to play
-                let note_to_play = recorded_note.note;
-                let octave_to_use = recorded_note.octave;
-
-                // Set the octave temporarily for playback
-                let original_octave = state.octave;
-                state.octave = octave_to_use;
-
-                // Play the note
-                handle_musical_note(state, sink, note_to_play);
-                state.pressed_key = Some((Key::Q, note_to_play)); // Use Q as placeholder key for playback
-
-                // Restore original octave
-                state.octave = original_octave;
+                if should_trigger {
+                    // Create mixer and play note on this specific track
+                    let mixer = crate::audio::MultiTrackMixer::new(44100);
+                    mixer.play_note_on_track(track, recorded_note.note, sink);
+                    
+                    // Set visual feedback for any playing track
+                    state.pressed_key = Some((Key::Q, recorded_note.note));
+                    state.current_frequency = Some(recorded_note.note.frequency(recorded_note.octave));
+                    state.animation_start_time = std::time::Instant::now();
+                }
             }
         }
 

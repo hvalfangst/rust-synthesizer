@@ -32,7 +32,7 @@ impl InputCommand for KeyboardInputCommand {
             handle_musical_note(state, sink, *note);
             state.pressed_key = Some((self.key, *note));
             
-            // Handle recording if active
+            // Handle recording if active - record to current track
             if state.recording_state == crate::state::RecordingState::Recording {
                 // Finish previous note if there was one
                 if let Some((start_time, prev_note, prev_octave)) = state.current_note_start.take() {
@@ -41,7 +41,8 @@ impl InputCommand for KeyboardInputCommand {
                         .map(|start| start.elapsed().as_secs_f32() - duration)
                         .unwrap_or(0.0);
 
-                    state.recorded_notes.push(crate::state::RecordedNote {
+                    // Add to current track instead of global recorded_notes
+                    state.add_note_to_current_track(crate::state::RecordedNote {
                         note: prev_note,
                         octave: prev_octave,
                         timestamp,
@@ -49,8 +50,9 @@ impl InputCommand for KeyboardInputCommand {
                     });
                 }
 
-                // Start recording new note
-                state.current_note_start = Some((std::time::Instant::now(), *note, state.get_current_octave()));
+                // Start recording new note using current track's octave
+                let current_track_octave = state.tracks[state.current_track_id].octave;
+                state.current_note_start = Some((std::time::Instant::now(), *note, current_track_octave));
             }
         }
     }

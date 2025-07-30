@@ -10,7 +10,7 @@ Software synthesizer programmed in Rust. Built using [rodio](https://crates.io/c
 
 **Real-time Audio Effects**: Delay, Reverb, and Flanger
 
-**Recording & Playback**: Record and play them performances in loops
+**4-Track Recording**: Record and play loops on 4 independent tracks
 
 **Interactive GUI**: Mouse and keyboard controls for all parameters
 
@@ -41,7 +41,7 @@ utilizing 'cargo build --release'
 ```
 
 ## Screenshot
-![screenshot](rust_synthesizer_screenshot.png)
+![screenshot](screenshot.png)
 
 ## Synthesizer Key Controls
 Musical Notes:
@@ -85,10 +85,11 @@ Audio Effects Control:
     F11: Toggle Reverb Effect (Schroeder reverb algorithm)
     F12: Toggle Flanger Effect (Modulated delay with LFO)
 
-Recording & Playback:
+Track Recording & Playback:
 
-    Mouse: Click REC button to start/stop recording
-    Mouse: Click PLAY button to playback recorded notes (loops automatically)
+    Mouse: Click track name to select track (Lead, Bass, Drums, Pads)
+    Mouse: Click REC button on any track to record on that track
+    Mouse: Click PLAY button on any track to toggle individual track playback
     Mouse: Click STOP button to halt all audio and recording
 
 ## Mouse Controls
@@ -107,5 +108,7 @@ Recording & Playback:
 
 **Effects Buttons**: Click DLY, REV, FLG buttons to toggle audio effects
 
-**Control Buttons**: Click REC, PLAY, STOP for recording functionality
+**Track Controls**: Click track names to select, use individual REC/PLAY/STOP buttons per track
+
+**Track Display**: Shows 4 tracks with transport controls, loop indicators, and volume levels
 

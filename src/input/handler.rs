@@ -41,7 +41,7 @@ impl InputHandler {
         self.register_keyboard_command(Key::U, Arc::new(KeyboardInputCommand::new(Key::U)));
         
         // Waveform toggle
-        self.register_keyboard_command(Key::S, Arc::new(WaveformToggleCommand));
+        self.register_keyboard_command(Key::Tab, Arc::new(WaveformToggleCommand));
         
         // Octave controls
         self.register_keyboard_command(Key::F1, Arc::new(OctaveAdjustCommand::new(false))); // decrease
@@ -61,6 +61,14 @@ impl InputHandler {
         self.register_keyboard_command(Key::F10, Arc::new(EffectsToggleCommand::new_delay()));   // toggle delay
         self.register_keyboard_command(Key::F11, Arc::new(EffectsToggleCommand::new_reverb()));  // toggle reverb
         self.register_keyboard_command(Key::F12, Arc::new(EffectsToggleCommand::new_flanger())); // toggle flanger
+        
+        // Track control commands (no keyboard switching - mouse only)
+        self.register_keyboard_command(Key::M, Arc::new(TrackControlCommand::new(TrackAction::ToggleMute)));
+        self.register_keyboard_command(Key::S, Arc::new(TrackControlCommand::new(TrackAction::ToggleSolo)));
+        self.register_keyboard_command(Key::Equal, Arc::new(TrackControlCommand::new(TrackAction::VolumeUp)));      // + key
+        self.register_keyboard_command(Key::Minus, Arc::new(TrackControlCommand::new(TrackAction::VolumeDown)));   // - key
+        self.register_keyboard_command(Key::LeftBracket, Arc::new(TrackControlCommand::new(TrackAction::PanLeft)));  // [ key
+        self.register_keyboard_command(Key::RightBracket, Arc::new(TrackControlCommand::new(TrackAction::PanRight))); // ] key
     }
     
     /// Register a keyboard command for a specific key

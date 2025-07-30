@@ -20,10 +20,10 @@ impl InputCommand for OctaveAdjustCommand {
         let key = if self.increase { Key::F2 } else { Key::F1 };
         
         if window.is_key_pressed(key, KeyRepeat::No) {
-            if self.increase && state.get_current_octave() < OCTAVE_UPPER_BOUND {
-                state.increase_octave();
-            } else if !self.increase && state.get_current_octave() > OCTAVE_LOWER_BOUND {
-                state.decrease_octave();
+            if self.increase {
+                state.increase_current_track_octave();
+            } else {
+                state.decrease_current_track_octave();
             }
         }
     }

@@ -62,11 +62,14 @@ impl InputCommand for MouseInputCommand {
         // Handle waveform display interactions
         handle_waveform_display_mouse(state);
         
-        // Handle control button interactions
-        handle_control_buttons_mouse(state, sink);
+        // Handle control button interactions - DISABLED: now using per-track transport
+        // handle_control_buttons_mouse(state, sink);
         
         // Handle effects button interactions
         handle_effects_buttons_mouse(state, sink);
+        
+        // Handle track selection clicks
+        handle_track_selection_mouse(state, sink);
     }
 }
 
@@ -99,12 +102,24 @@ pub fn handle_adsr_fader_mouse(state: &mut State, sink: &mut Sink) {
                 let normalized_value = 1.0 - (relative_y / fader_height as f32).clamp(0.0, 1.0);
                 let new_value = (normalized_value * 99.0) as u8;
 
-                // Update the appropriate ADSR parameter
+                // Update the appropriate ADSR parameter on current track
                 match *param {
-                    "attack" => state.attack = new_value,
-                    "decay" => state.decay = new_value,
-                    "sustain" => state.sustain = new_value,
-                    "release" => state.release = new_value,
+                    "attack" => {
+                        state.tracks[state.current_track_id].attack = new_value;
+                        state.attack = new_value; // Sync legacy state
+                    },
+                    "decay" => {
+                        state.tracks[state.current_track_id].decay = new_value;
+                        state.decay = new_value; // Sync legacy state
+                    },
+                    "sustain" => {
+                        state.tracks[state.current_track_id].sustain = new_value;
+                        state.sustain = new_value; // Sync legacy state
+                    },
+                    "release" => {
+                        state.tracks[state.current_track_id].release = new_value;
+                        state.release = new_value; // Sync legacy state
+                    },
                     _ => {}
                 }
             }
@@ -149,7 +164,7 @@ pub fn handle_tangent_mouse(state: &mut State, sink: &mut Sink) -> bool {
                 handle_musical_note(state, sink, note);
                 state.pressed_key = Some((key, note));
 
-                // Record note if recording
+                // Record note if recording - record to current track
                 if state.recording_state == crate::state::RecordingState::Recording {
                     // Finish previous note if there was one
                     if let Some((start_time, prev_note, prev_octave)) = state.current_note_start.take() {
@@ -158,7 +173,8 @@ pub fn handle_tangent_mouse(state: &mut State, sink: &mut Sink) -> bool {
                             .map(|start| start.elapsed().as_secs_f32() - duration)
                             .unwrap_or(0.0);
 
-                        state.recorded_notes.push(crate::state::RecordedNote {
+                        // Add to current track instead of global recorded_notes
+                        state.add_note_to_current_track(crate::state::RecordedNote {
                             note: prev_note,
                             octave: prev_octave,
                             timestamp,
@@ -166,8 +182,9 @@ pub fn handle_tangent_mouse(state: &mut State, sink: &mut Sink) -> bool {
                         });
                     }
 
-                    // Start recording new note
-                    state.current_note_start = Some((std::time::Instant::now(), note, state.octave));
+                    // Start recording new note using current track's octave
+                    let current_track_octave = state.tracks[state.current_track_id].octave;
+                    state.current_note_start = Some((std::time::Instant::now(), note, current_track_octave));
                 }
                 return true; // Return true to indicate a tangent was clicked
             }
@@ -198,7 +215,7 @@ pub fn handle_keyboard_mouse(state: &mut State, sink: &mut Sink) {
                 state.pressed_key = Some((key, note));
 
 
-                // Record note if recording
+                // Record note if recording - record to current track
                 if state.recording_state == crate::state::RecordingState::Recording {
                     // Finish previous note if there was one
                     if let Some((start_time, prev_note, prev_octave)) = state.current_note_start.take() {
@@ -207,7 +224,8 @@ pub fn handle_keyboard_mouse(state: &mut State, sink: &mut Sink) {
                             .map(|start| start.elapsed().as_secs_f32() - duration)
                             .unwrap_or(0.0);
 
-                        state.recorded_notes.push(crate::state::RecordedNote {
+                        // Add to current track instead of global recorded_notes
+                        state.add_note_to_current_track(crate::state::RecordedNote {
                             note: prev_note,
                             octave: prev_octave,
                             timestamp,
@@ -215,8 +233,9 @@ pub fn handle_keyboard_mouse(state: &mut State, sink: &mut Sink) {
                         });
                     }
 
-                    // Start recording new note
-                    state.current_note_start = Some((std::time::Instant::now(), note, state.octave));
+                    // Start recording new note using current track's octave
+                    let current_track_octave = state.tracks[state.current_track_id].octave;
+                    state.current_note_start = Some((std::time::Instant::now(), note, current_track_octave));
                 }
                 return; // Exit after handling one key to avoid multiple triggers
             }
@@ -249,10 +268,10 @@ pub fn handle_octave_fader_mouse(state: &mut State) {
             // If clicked in upper half, increase octave; if lower half, decrease octave
             if relative_y < fader_center_y {
                 // Clicked in upper part - increase octave
-                state.increase_octave();
+                state.increase_current_track_octave();
             } else {
                 // Clicked in lower part - decrease octave
-                state.decrease_octave();
+                state.decrease_current_track_octave();
             }
         }
     }
@@ -272,7 +291,7 @@ pub fn handle_waveform_display_mouse(state: &mut State) {
 
         if state.mouse.left_clicked {
             // Toggle to next waveform (cycles through SINE -> SQUARE -> TRIANGLE -> SAWTOOTH -> SINE)
-            state.toggle_waveform();
+            state.toggle_current_track_waveform();
         }
     }
 }
@@ -361,32 +380,156 @@ pub fn handle_effects_buttons_mouse(state: &mut State, sink: &mut Sink) {
            state.mouse.y >= base_y as f32 && state.mouse.y <= (base_y + button_height) as f32 {
             
             if state.mouse.left_clicked {
-                // Toggle the appropriate effect
+                // Toggle the appropriate effect on current track
                 match i {
                     0 => {
                         // Delay button
-                        state.delay_enabled = !state.delay_enabled;
-                        if !state.delay_enabled {
-                            state.delay_effect.reset();
+                        state.toggle_current_track_delay();
+                        let current_track_id = state.current_track_id;
+                        if !state.tracks[current_track_id].delay_enabled {
+                            state.tracks[current_track_id].delay_effect.reset();
                         }
                     },
                     1 => {
                         // Reverb button
-                        state.reverb_enabled = !state.reverb_enabled;
-                        if !state.reverb_enabled {
-                            state.reverb_effect.reset();
+                        state.toggle_current_track_reverb();
+                        let current_track_id = state.current_track_id;
+                        if !state.tracks[current_track_id].reverb_enabled {
+                            state.tracks[current_track_id].reverb_effect.reset();
                         }
                     },
                     2 => {
                         // Flanger button
-                        state.flanger_enabled = !state.flanger_enabled;
-                        if !state.flanger_enabled {
-                            state.flanger_effect.reset();
+                        state.toggle_current_track_flanger();
+                        let current_track_id = state.current_track_id;
+                        if !state.tracks[current_track_id].flanger_enabled {
+                            state.tracks[current_track_id].flanger_effect.reset();
                         }
                     },
                     _ => {}
                 }
                 return; // Exit after handling one button
+            }
+        }
+    }
+}
+
+/// Handle mouse interactions with track display, transport controls, and mute/solo buttons
+pub fn handle_track_selection_mouse(state: &mut State, sink: &mut Sink) {
+    // Track display positions (matching draw_track_info)
+    let base_x = 10;
+    let base_y = 10;
+    let track_height = 25;
+    let track_width = 350; // Updated width for transport controls
+    
+    // Check each track
+    for i in 0..state.tracks.len() {
+        let track_y = base_y + i * track_height;
+        let transport_x = base_x + 80;
+        
+        // Check record button
+        if state.mouse.x >= transport_x as f32 && state.mouse.x <= (transport_x + 16) as f32 &&
+           state.mouse.y >= (track_y + 2) as f32 && state.mouse.y <= (track_y + 18) as f32 {
+            
+            if state.mouse.left_clicked {
+                // Switch to this track first
+                state.switch_to_track(i);
+                
+                // Handle record toggle
+                match state.recording_state {
+                    crate::state::RecordingState::Stopped => {
+                        state.start_track_recording();
+                        println!("Recording on track {}: {}", i + 1, state.tracks[i].name);
+                    },
+                    crate::state::RecordingState::Recording => {
+                        state.stop_recording();
+                        println!("Stopped recording on track {}: {}", i + 1, state.tracks[i].name);
+                    },
+                    crate::state::RecordingState::Playing => {
+                        state.stop_playback();
+                        state.start_track_recording();
+                        println!("Switched to recording on track {}: {}", i + 1, state.tracks[i].name);
+                    },
+                }
+                return;
+            }
+        }
+        
+        // Check play button - now toggles individual track playback
+        let play_x = transport_x + 20;
+        if state.mouse.x >= play_x as f32 && state.mouse.x <= (play_x + 16) as f32 &&
+           state.mouse.y >= (track_y + 2) as f32 && state.mouse.y <= (track_y + 18) as f32 {
+            
+            if state.mouse.left_clicked {
+                // Toggle individual track playback only if track has content
+                if !state.tracks[i].recorded_notes.is_empty() {
+                    state.tracks[i].playing = !state.tracks[i].playing;
+                    println!("Track {} ({}) playing: {}", i + 1, state.tracks[i].name, state.tracks[i].playing);
+                    
+                    // If any tracks are now playing, switch to playing mode
+                    // If no tracks are playing, stop playback mode
+                    if state.has_playing_tracks() {
+                        if state.recording_state != crate::state::RecordingState::Playing {
+                            state.recording_state = crate::state::RecordingState::Playing;
+                            state.playback_start_time = Some(std::time::Instant::now());
+                        }
+                    } else {
+                        state.stop_playback();
+                    }
+                } else {
+                    println!("Track {} ({}) has no recorded content to play", i + 1, state.tracks[i].name);
+                }
+                return;
+            }
+        }
+        
+        // Check stop button
+        let stop_x = play_x + 20;
+        if state.mouse.x >= stop_x as f32 && state.mouse.x <= (stop_x + 16) as f32 &&
+           state.mouse.y >= (track_y + 2) as f32 && state.mouse.y <= (track_y + 18) as f32 {
+            
+            if state.mouse.left_clicked {
+                // Stop everything
+                sink.stop(); // Stop all audio immediately
+                state.stop_recording();
+                state.stop_playback();
+                state.stop_all_track_playback(); // Stop individual track playback
+                
+                // Clear any pressed keys and reset audio state
+                state.pressed_key = None;
+                state.current_frequency = None;
+                state.key_release_time = None;
+                
+                println!("Stopped all transport");
+                return;
+            }
+        }
+        
+        
+        // Check track name area for selection (avoid buttons)
+        let name_area_width = 75; // Just the name area
+        if state.mouse.x >= base_x as f32 && state.mouse.x <= (base_x + name_area_width) as f32 &&
+           state.mouse.y >= track_y as f32 && state.mouse.y <= (track_y + 20) as f32 {
+            
+            if state.mouse.left_clicked {
+                // Switch to this track
+                state.switch_to_track(i);
+                
+                // Update legacy state to match selected track
+                let current_track_id = state.current_track_id;
+                let track = &state.tracks[current_track_id];
+                state.octave = track.octave;
+                state.waveform = track.waveform.clone();
+                state.attack = track.attack;
+                state.decay = track.decay;
+                state.sustain = track.sustain;
+                state.release = track.release;
+                state.delay_enabled = track.delay_enabled;
+                state.reverb_enabled = track.reverb_enabled;
+                state.flanger_enabled = track.flanger_enabled;
+                
+                println!("Switched to track {}: {}", i + 1, track.name);
+                return; // Exit after handling one track
             }
         }
     }

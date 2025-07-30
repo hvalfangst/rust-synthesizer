@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use minifb::Key;
 use rodio::{Sink, Source};
+use crate::audio::MultiTrackMixer;
 use crate::effects::{EffectWrapper, AudioEffect, DelayEffect, ReverbEffect, FlangerEffect};
 use std::time::Duration;
 
@@ -91,9 +92,9 @@ use crate::{
 /// - `current_waveform`: The waveform enum representing the type of waveform to use for synthesizing the sound.
 /// - `note`: The musical note (pitch) to be played.
 pub fn handle_musical_note(state: &mut State, sink: &mut Sink, note: Note) {
-
-    // Compute the base frequency association with the note and octave
-    let base_frequency = note.frequency(state.octave);
+    // Get current track info without borrowing
+    let current_track_id = state.current_track_id;
+    let base_frequency = note.frequency(state.tracks[current_track_id].octave);
 
     // Store the current frequency for display purposes and reset animation timing
     state.current_frequency = Some(base_frequency);
@@ -103,8 +104,18 @@ pub fn handle_musical_note(state: &mut State, sink: &mut Sink, note: Note) {
     // Stop any currently playing audio to prevent queueing
     sink.stop();
 
-    // Initialize Synth implementation based on Waveform enum with ADSR envelope
-    let synth = match state.waveform {
+    // Create mixer and play note on current track
+    let mixer = MultiTrackMixer::new(44100);
+    let current_track = &state.tracks[current_track_id];
+    mixer.play_note_on_track(current_track, note, sink);
+    
+    // Return early - mixer handles everything now
+    return;
+
+    /* LEGACY CODE - COMMENTED OUT
+    // For backwards compatibility, also create the original synth
+    // TODO: Remove this once full multi-track system is implemented
+    let synth = match current_track.waveform {
         Waveform::SINE => {
             let filtered_frequency = state.apply_lpf(base_frequency);
             let sine_wave = SineWave::new(filtered_frequency);
@@ -168,6 +179,7 @@ pub fn handle_musical_note(state: &mut State, sink: &mut Sink, note: Note) {
 
     // Play the sound source immediately, replacing any queued audio
     let _result = sink.append(source_with_effects);
+    */
 }
 
 
@@ -205,11 +217,14 @@ pub fn update_buffer_with_state(state: &State, sprites: &Sprites, window_buffer:
     // Draw ADSR faders
     draw_adsr_faders(state, sprites, window_buffer);
     
-    // Draw control buttons
-    draw_control_buttons(state, window_buffer);
+    // Draw control buttons - DISABLED: now using per-track transport
+    // draw_control_buttons(state, window_buffer);
     
     // Draw effects buttons
     draw_effects_buttons(state, window_buffer);
+    
+    // Draw track information
+    draw_track_info(state, window_buffer);
 
     // Draw octave fader, which display the current octave controlled by keys F1/F2
     draw_octave_fader_sprite(state.octave, sprites, window_buffer);
@@ -238,7 +253,9 @@ pub fn update_buffer_with_state(state: &State, sprites: &Sprites, window_buffer:
     };
     
     // Always generate display (frame always visible, waveform only when amplitude > 0)
-    let waveform_sprite = generate_waveform_display(frequency, state.waveform, animation_time, amplitude);
+    // Use current track's waveform
+    let current_track_waveform = state.tracks[state.current_track_id].waveform.clone();
+    let waveform_sprite = generate_waveform_display(frequency, current_track_waveform, animation_time, amplitude);
     draw_display_sprite_single(&waveform_sprite, window_buffer);
     
 
@@ -356,10 +373,12 @@ pub fn draw_effects_buttons(state: &State, buffer: &mut Vec<u32>) {
     let base_x = display_end_x + button_spacing;
     let base_y = 4 * 51 + 17 + 15; // Same Y as display + offset
     
+    // Show current track's effects
+    let current_track = &state.tracks[state.current_track_id];
     let effects = [
-        ("DLY", state.delay_enabled, 0xFF4444FF), // Blue for delay
-        ("REV", state.reverb_enabled, 0xFF44FF44), // Green for reverb  
-        ("FLG", state.flanger_enabled, 0xFFFF4444), // Red for flanger
+        ("DLY", current_track.delay_enabled, 0xFF4444FF), // Blue for delay
+        ("REV", current_track.reverb_enabled, 0xFF44FF44), // Green for reverb  
+        ("FLG", current_track.flanger_enabled, 0xFFFF4444), // Red for flanger
     ];
     
     for (i, (label, enabled, base_color)) in effects.iter().enumerate() {
@@ -475,4 +494,264 @@ fn blend_colors(color1: u32, color2: u32, factor: f32) -> u32 {
     let b = (b1 * (1.0 - factor) + b2 * factor) as u32;
     
     0xFF000000 | (r << 16) | (g << 8) | b
+}
+
+/// Draw track information display with per-track transport controls
+pub fn draw_track_info(state: &State, buffer: &mut Vec<u32>) {
+    let base_x = 10;
+    let base_y = 10;
+    let track_height = 25;
+    let track_width = 250; // Reduced width since we removed mute/solo
+    
+    // Draw all 4 tracks
+    for (i, track) in state.tracks.iter().enumerate() {
+        let y = base_y + i * track_height;
+        let is_current = i == state.current_track_id;
+        let is_recording = state.recording_state == crate::state::RecordingState::Recording && is_current;
+        let is_track_playing = track.playing;
+        
+        // Choose colors based on track state
+        let (bg_color, text_color) = if is_current {
+            (0xFF444444, 0xFFFFFFFF) // Bright background for current track
+        } else {
+            (0xFF222222, 0xFF888888) // Dark background for other tracks
+        };
+        
+        // Draw track background
+        draw_track_bar(base_x, y, track_width, 20, bg_color, buffer);
+        
+        // Draw track number and name
+        let track_text = format!("{}: {}", i + 1, track.name);
+        draw_simple_text(base_x + 5, y + 5, &track_text, text_color, buffer);
+        
+        // Transport controls start after track name
+        let transport_x = base_x + 80;
+        
+        // Record button (red circle ●)
+        let rec_color = if is_recording { 0xFFFF0000 } else { 0xFF660000 };
+        draw_transport_button(transport_x, y + 2, 16, 16, rec_color, buffer);
+        draw_record_symbol(transport_x + 5, y + 7, if is_recording { 0xFFFFFFFF } else { 0xFF888888 }, buffer);
+        
+        // Play button (triangle ▶) - now shows individual track play state
+        let play_x = transport_x + 20;
+        let has_content = !track.recorded_notes.is_empty();
+        let play_color = if is_track_playing && has_content { 0xFF00AA00 } else { 0xFF006600 };
+        draw_transport_button(play_x, y + 2, 16, 16, play_color, buffer);
+        draw_play_symbol(play_x + 4, y + 5, if is_track_playing { 0xFFFFFFFF } else { 0xFF888888 }, buffer);
+        
+        // Stop button (square ■)
+        let stop_x = play_x + 20;
+        let stop_color = 0xFF666666;
+        draw_transport_button(stop_x, y + 2, 16, 16, stop_color, buffer);
+        draw_stop_symbol(stop_x + 4, y + 6, 0xFF888888, buffer);
+        
+        // Loop indicator
+        let loop_x = stop_x + 25;
+        let has_loop = !track.recorded_notes.is_empty();
+        let loop_color = if has_loop { 0xFF00AAFF } else { 0xFF333333 };
+        draw_button(loop_x, y + 2, 20, 16, loop_color, buffer);
+        draw_simple_text(loop_x + 2, y + 7, "♪", if has_loop { 0xFFFFFFFF } else { 0xFF666666 }, buffer);
+        
+        // Volume indicator  
+        let vol_x = loop_x + 25;
+        let vol_width = (track.volume * 25.0) as usize;
+        draw_volume_bar(vol_x, y + 8, vol_width, 4, 0xFF0088FF, buffer);
+    }
+}
+
+/// Draw a simple track background bar
+fn draw_track_bar(x: usize, y: usize, width: usize, height: usize, color: u32, buffer: &mut Vec<u32>) {
+    for dy in 0..height {
+        for dx in 0..width {
+            let pixel_x = x + dx;
+            let pixel_y = y + dy;
+            let index = pixel_y * WINDOW_WIDTH + pixel_x;
+            
+            if index < buffer.len() {
+                buffer[index] = color;
+            }
+        }
+    }
+}
+
+/// Draw simple text using a basic bitmap font
+fn draw_simple_text(x: usize, y: usize, text: &str, color: u32, buffer: &mut Vec<u32>) {
+    // Simple 3x5 bitmap font (limited character set)
+    let font_patterns = std::collections::HashMap::from([
+        ('1', vec![0b010, 0b110, 0b010, 0b010, 0b111]),
+        ('2', vec![0b111, 0b001, 0b111, 0b100, 0b111]),
+        ('3', vec![0b111, 0b001, 0b111, 0b001, 0b111]),
+        ('4', vec![0b101, 0b101, 0b111, 0b001, 0b001]),
+        ('L', vec![0b100, 0b100, 0b100, 0b100, 0b111]),
+        ('e', vec![0b000, 0b111, 0b101, 0b110, 0b111]),
+        ('a', vec![0b000, 0b011, 0b101, 0b101, 0b011]),
+        ('d', vec![0b001, 0b011, 0b101, 0b101, 0b011]),
+        ('B', vec![0b110, 0b101, 0b110, 0b101, 0b110]),
+        ('s', vec![0b000, 0b111, 0b100, 0b001, 0b111]),
+        ('r', vec![0b000, 0b110, 0b100, 0b100, 0b100]),
+        ('u', vec![0b000, 0b101, 0b101, 0b101, 0b011]),
+        ('m', vec![0b000, 0b110, 0b111, 0b101, 0b101]),
+        ('D', vec![0b110, 0b101, 0b101, 0b101, 0b110]),
+        ('P', vec![0b111, 0b101, 0b111, 0b100, 0b100]),
+        (':', vec![0b000, 0b010, 0b000, 0b010, 0b000]),
+        (' ', vec![0b000, 0b000, 0b000, 0b000, 0b000]),
+        ('M', vec![0b101, 0b111, 0b101, 0b101, 0b101]),
+        ('S', vec![0b111, 0b100, 0b111, 0b001, 0b111]),
+    ]);
+    
+    for (i, ch) in text.chars().enumerate() {
+        if let Some(pattern) = font_patterns.get(&ch) {
+            for (row, &bits) in pattern.iter().enumerate() {
+                for col in 0..3 {
+                    if (bits >> (2 - col)) & 1 == 1 {
+                        let pixel_x = x + i * 4 + col;
+                        let pixel_y = y + row;
+                        let index = pixel_y * WINDOW_WIDTH + pixel_x;
+                        
+                        if index < buffer.len() {
+                            buffer[index] = color;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Draw a volume level bar
+fn draw_volume_bar(x: usize, y: usize, width: usize, height: usize, color: u32, buffer: &mut Vec<u32>) {
+    for dy in 0..height {
+        for dx in 0..width {
+            let pixel_x = x + dx;
+            let pixel_y = y + dy;
+            let index = pixel_y * WINDOW_WIDTH + pixel_x;
+            
+            if index < buffer.len() {
+                buffer[index] = color;
+            }
+        }
+    }
+}
+
+/// Draw a clickable button
+fn draw_button(x: usize, y: usize, width: usize, height: usize, color: u32, buffer: &mut Vec<u32>) {
+    // Draw button background
+    for dy in 1..height-1 {
+        for dx in 1..width-1 {
+            let pixel_x = x + dx;
+            let pixel_y = y + dy;
+            let index = pixel_y * WINDOW_WIDTH + pixel_x;
+            
+            if index < buffer.len() {
+                buffer[index] = color;
+            }
+        }
+    }
+    
+    // Draw border
+    let border_color = 0xFF888888;
+    for dy in 0..height {
+        for dx in 0..width {
+            let pixel_x = x + dx;
+            let pixel_y = y + dy;
+            let index = pixel_y * WINDOW_WIDTH + pixel_x;
+            
+            if index < buffer.len() && (dx == 0 || dx == width - 1 || dy == 0 || dy == height - 1) {
+                buffer[index] = border_color;
+            }
+        }
+    }
+}
+
+/// Draw a transport button (rounded style)
+fn draw_transport_button(x: usize, y: usize, width: usize, height: usize, color: u32, buffer: &mut Vec<u32>) {
+    // Draw rounded button background
+    for dy in 0..height {
+        for dx in 0..width {
+            let pixel_x = x + dx;
+            let pixel_y = y + dy;
+            let index = pixel_y * WINDOW_WIDTH + pixel_x;
+            
+            if index < buffer.len() {
+                // Skip corners for rounded effect
+                let is_corner = (dx <= 1 || dx >= width - 2) && (dy <= 1 || dy >= height - 2);
+                if !is_corner {
+                    buffer[index] = color;
+                }
+            }
+        }
+    }
+}
+
+/// Draw record symbol (filled circle)
+fn draw_record_symbol(x: usize, y: usize, color: u32, buffer: &mut Vec<u32>) {
+    // Draw a 6x6 filled circle
+    let circle = [
+        0b011110,
+        0b111111,
+        0b111111,
+        0b111111,
+        0b111111,
+        0b011110,
+    ];
+    
+    for (row, &bits) in circle.iter().enumerate() {
+        for col in 0..6 {
+            if (bits >> (5 - col)) & 1 == 1 {
+                let pixel_x = x + col;
+                let pixel_y = y + row;
+                let index = pixel_y * WINDOW_WIDTH + pixel_x;
+                
+                if index < buffer.len() {
+                    buffer[index] = color;
+                }
+            }
+        }
+    }
+}
+
+/// Draw play symbol (triangle pointing right)
+fn draw_play_symbol(x: usize, y: usize, color: u32, buffer: &mut Vec<u32>) {
+    // Draw a right-pointing triangle
+    let triangle = [
+        0b100000,
+        0b110000,
+        0b111000,
+        0b111100,
+        0b111110,
+        0b111100,
+        0b111000,
+        0b110000,
+        0b100000,
+    ];
+    
+    for (row, &bits) in triangle.iter().enumerate() {
+        for col in 0..6 {
+            if (bits >> (5 - col)) & 1 == 1 {
+                let pixel_x = x + col;
+                let pixel_y = y + row;
+                let index = pixel_y * WINDOW_WIDTH + pixel_x;
+                
+                if index < buffer.len() {
+                    buffer[index] = color;
+                }
+            }
+        }
+    }
+}
+
+/// Draw stop symbol (filled square)
+fn draw_stop_symbol(x: usize, y: usize, color: u32, buffer: &mut Vec<u32>) {
+    // Draw a 8x8 filled square
+    for dy in 0..8 {
+        for dx in 0..8 {
+            let pixel_x = x + dx;
+            let pixel_y = y + dy;
+            let index = pixel_y * WINDOW_WIDTH + pixel_x;
+            
+            if index < buffer.len() {
+                buffer[index] = color;
+            }
+        }
+    }
 }

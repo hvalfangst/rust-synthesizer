@@ -8,6 +8,81 @@ use crate::music_theory::note::Note;
 use crate::waveforms::Waveform;
 use crate::effects::{DelayEffect, ReverbEffect, FlangerEffect};
 
+// DAW Track System
+#[derive(Debug, Clone)]
+pub struct Track {
+    pub id: usize,
+    pub name: String,
+    pub recorded_notes: Vec<RecordedNote>,
+    pub volume: f32,        // 0.0 - 1.0
+    pub pan: f32,           // -1.0 (left) to 1.0 (right)
+    pub playing: bool,      // Whether this track's loop is currently playing
+    pub waveform: Waveform,
+    pub octave: i32,
+    // Track-specific effects
+    pub delay_enabled: bool,
+    pub reverb_enabled: bool,
+    pub flanger_enabled: bool,
+    pub delay_effect: DelayEffect,
+    pub reverb_effect: ReverbEffect,
+    pub flanger_effect: FlangerEffect,
+    // Track-specific ADSR
+    pub attack: u8,
+    pub decay: u8,
+    pub sustain: u8,
+    pub release: u8,
+}
+
+impl Track {
+    pub fn new(id: usize, name: String) -> Self {
+        Self {
+            id,
+            name,
+            recorded_notes: Vec::new(),
+            volume: 0.8,
+            pan: 0.0,
+            playing: false,
+            waveform: Waveform::SQUARE,
+            octave: 4,
+            delay_enabled: false,
+            reverb_enabled: false,
+            flanger_enabled: false,
+            delay_effect: DelayEffect::new(300.0, 0.55, 0.5, 44100),
+            reverb_effect: ReverbEffect::new(0.7, 0.4, 0.6, 44100),
+            flanger_effect: FlangerEffect::new(0.5, 0.7, 0.1, 0.5, 44100),
+            attack: 0,
+            decay: 0,
+            sustain: 50,
+            release: 20,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MasterTrack {
+    pub volume: f32,        // Master volume 0.0 - 1.0
+    pub delay_enabled: bool,
+    pub reverb_enabled: bool,
+    pub flanger_enabled: bool,
+    pub delay_effect: DelayEffect,
+    pub reverb_effect: ReverbEffect,
+    pub flanger_effect: FlangerEffect,
+}
+
+impl MasterTrack {
+    pub fn new() -> Self {
+        Self {
+            volume: 0.9,
+            delay_enabled: false,
+            reverb_enabled: false,
+            flanger_enabled: false,
+            delay_effect: DelayEffect::new(400.0, 0.4, 0.3, 44100),
+            reverb_effect: ReverbEffect::new(0.8, 0.3, 0.4, 44100),
+            flanger_effect: FlangerEffect::new(0.3, 0.5, 0.05, 0.3, 44100),
+        }
+    }
+}
+
 // Recording structures
 #[derive(Debug, Clone)]
 pub struct RecordedNote {
@@ -63,8 +138,14 @@ pub mod updaters;
 
 const FRAME_DURATION: Duration = Duration::from_millis(16); // Approximately 60Hz refresh rate
 
-// Synthesizer State Struct
+// DAW State Struct - Multi-track Digital Audio Workstation
 pub struct State {
+    // DAW Core
+    pub tracks: Vec<Track>,          // 4 individual tracks
+    pub master_track: MasterTrack,   // Master mix bus
+    pub current_track_id: usize,     // Currently selected track (0-3)
+    
+    // Legacy single-track compatibility (will be removed later)
     pub(crate) octave: i32,
     pub(crate) waveform: Waveform,
     pub(crate) pressed_key: Option<(Key, Note)>,
@@ -74,15 +155,16 @@ pub struct State {
     pub(crate) current_frequency: Option<f32>, // Track current playing frequency
     pub(crate) animation_start_time: Instant, // When the animation started
     pub(crate) key_release_time: Option<Instant>, // When the key was released for fade-out
-    // ADSR parameters (0 to 99)
-    pub attack: u8,  // Attack time (0 = instant, 99 = 2 seconds)
-    pub decay: u8,   // Decay time (0 = instant, 99 = 2 seconds)
-    pub sustain: u8, // Sustain level (0 = silent, 99 = full volume)
-    pub release: u8, // Release time (0 = instant, 99 = 2 seconds)
+    
+    // Legacy ADSR (will use track-specific ADSR later)
+    pub attack: u8,
+    pub decay: u8,
+    pub sustain: u8,
+    pub release: u8,
     
     // Recording state
     pub recording_state: RecordingState,
-    pub recorded_notes: Vec<RecordedNote>,
+    pub recorded_notes: Vec<RecordedNote>, // Legacy - will use track-specific
     pub visual_notes: Vec<VisualNote>,
     pub recording_start_time: Option<Instant>,
     pub playback_start_time: Option<Instant>,
@@ -103,10 +185,22 @@ pub struct State {
     pub flanger_effect: FlangerEffect,
 }
 
-// Initialize Synthesizer State
+// Initialize DAW State
 impl State {
     pub(crate) fn new() -> Self {
+        // Create 4 tracks with different default settings
+        let tracks = vec![
+            Track::new(0, "Lead".to_string()),
+            Track::new(1, "Bass".to_string()),
+            Track::new(2, "Drums".to_string()),
+            Track::new(3, "Pads".to_string()),
+        ];
+        
         State {
+            // DAW Core initialization
+            tracks,
+            master_track: MasterTrack::new(),
+            current_track_id: 0, // Start with track 0 (Lead)
             octave: 4, // Set default octave to 4
             waveform: Waveform::SQUARE, // Set default waveform to Square
             pressed_key: None, // Default is no key
@@ -374,5 +468,215 @@ impl State {
             // Sustain phase
             return self.sustain_normalized();
         }
+    }
+    
+    // === DAW TRACK MANAGEMENT METHODS ===
+    
+    /// Switch to a specific track (0-3)
+    pub fn switch_to_track(&mut self, track_id: usize) {
+        if track_id < self.tracks.len() {
+            self.current_track_id = track_id;
+        }
+    }
+    
+    /// Get the currently active track
+    pub fn current_track(&self) -> &Track {
+        &self.tracks[self.current_track_id]
+    }
+    
+    /// Get the currently active track (mutable)
+    pub fn current_track_mut(&mut self) -> &mut Track {
+        &mut self.tracks[self.current_track_id]
+    }
+    
+    /// Toggle playback on current track
+    pub fn toggle_current_track_playback(&mut self) {
+        self.tracks[self.current_track_id].playing = !self.tracks[self.current_track_id].playing;
+    }
+    
+    /// Stop all track playback
+    pub fn stop_all_track_playback(&mut self) {
+        for track in &mut self.tracks {
+            track.playing = false;
+        }
+    }
+    
+    /// Adjust volume of current track
+    pub fn adjust_current_track_volume(&mut self, delta: f32) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.volume = (track.volume + delta).clamp(0.0, 1.0);
+    }
+    
+    /// Adjust pan of current track
+    pub fn adjust_current_track_pan(&mut self, delta: f32) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.pan = (track.pan + delta).clamp(-1.0, 1.0);
+    }
+    
+    /// Get list of tracks that are currently playing
+    pub fn playing_tracks(&self) -> Vec<usize> {
+        self.tracks.iter()
+            .enumerate()
+            .filter(|(_, track)| track.playing && !track.recorded_notes.is_empty())
+            .map(|(i, _)| i)
+            .collect()
+    }
+    
+    /// Check if any tracks are currently playing
+    pub fn has_playing_tracks(&self) -> bool {
+        self.tracks.iter().any(|track| track.playing && !track.recorded_notes.is_empty())
+    }
+    
+    /// Start recording on current track
+    pub fn start_track_recording(&mut self) {
+        self.recording_state = RecordingState::Recording;
+        self.recording_start_time = Some(Instant::now());
+        // Clear current track's recorded notes
+        self.tracks[self.current_track_id].recorded_notes.clear();
+        self.current_note_start = None;
+    }
+    
+    /// Add recorded note to current track
+    pub fn add_note_to_current_track(&mut self, note: RecordedNote) {
+        self.tracks[self.current_track_id].recorded_notes.push(note);
+    }
+    
+    // === TRACK-SPECIFIC ADSR CONTROLS ===
+    
+    /// Increase attack on current track
+    pub fn increase_current_track_attack(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.attack = (track.attack + 1).min(99);
+        // Sync with legacy state
+        self.attack = track.attack;
+    }
+    
+    /// Decrease attack on current track
+    pub fn decrease_current_track_attack(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.attack = track.attack.saturating_sub(1);
+        // Sync with legacy state
+        self.attack = track.attack;
+    }
+    
+    /// Increase decay on current track
+    pub fn increase_current_track_decay(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.decay = (track.decay + 1).min(99);
+        // Sync with legacy state
+        self.decay = track.decay;
+    }
+    
+    /// Decrease decay on current track
+    pub fn decrease_current_track_decay(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.decay = track.decay.saturating_sub(1);
+        // Sync with legacy state
+        self.decay = track.decay;
+    }
+    
+    /// Increase sustain on current track
+    pub fn increase_current_track_sustain(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.sustain = (track.sustain + 1).min(99);
+        // Sync with legacy state
+        self.sustain = track.sustain;
+    }
+    
+    /// Decrease sustain on current track
+    pub fn decrease_current_track_sustain(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.sustain = track.sustain.saturating_sub(1);
+        // Sync with legacy state
+        self.sustain = track.sustain;
+    }
+    
+    /// Increase release on current track
+    pub fn increase_current_track_release(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.release = (track.release + 1).min(99);
+        // Sync with legacy state
+        self.release = track.release;
+    }
+    
+    /// Decrease release on current track
+    pub fn decrease_current_track_release(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.release = track.release.saturating_sub(1);
+        // Sync with legacy state
+        self.release = track.release;
+    }
+    
+    // === TRACK-SPECIFIC OCTAVE CONTROLS ===
+    
+    /// Increase octave on current track
+    pub fn increase_current_track_octave(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        if track.octave < OCTAVE_UPPER_BOUND {
+            track.octave += 1;
+            // Sync with legacy state
+            self.octave = track.octave;
+        }
+    }
+    
+    /// Decrease octave on current track
+    pub fn decrease_current_track_octave(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        if track.octave > OCTAVE_LOWER_BOUND {
+            track.octave -= 1;
+            // Sync with legacy state
+            self.octave = track.octave;
+        }
+    }
+    
+    // === TRACK-SPECIFIC EFFECTS CONTROLS ===
+    
+    /// Toggle delay on current track
+    pub fn toggle_current_track_delay(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.delay_enabled = !track.delay_enabled;
+        // Sync with legacy state
+        self.delay_enabled = track.delay_enabled;
+    }
+    
+    /// Toggle reverb on current track
+    pub fn toggle_current_track_reverb(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.reverb_enabled = !track.reverb_enabled;
+        // Sync with legacy state
+        self.reverb_enabled = track.reverb_enabled;
+    }
+    
+    /// Toggle flanger on current track
+    pub fn toggle_current_track_flanger(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.flanger_enabled = !track.flanger_enabled;
+        // Sync with legacy state
+        self.flanger_enabled = track.flanger_enabled;
+    }
+    
+    /// Toggle waveform on current track
+    pub fn toggle_current_track_waveform(&mut self) {
+        let track = &mut self.tracks[self.current_track_id];
+        track.waveform = match track.waveform {
+            Waveform::SINE => {
+                self.waveform_sprite_index = WAVEFORM_SQUARE;
+                Waveform::SQUARE
+            },
+            Waveform::SQUARE => {
+                self.waveform_sprite_index = WAVEFORM_TRIANGLE;
+                Waveform::TRIANGLE
+            },
+            Waveform::TRIANGLE => {
+                self.waveform_sprite_index = WAVEFORM_SAWTOOTH;
+                Waveform::SAWTOOTH
+            },
+            Waveform::SAWTOOTH => {
+                self.waveform_sprite_index = WAVEFORM_SINE;
+                Waveform::SINE
+            }
+        };
+        // Sync with legacy state
+        self.waveform = track.waveform.clone();
     }
 }

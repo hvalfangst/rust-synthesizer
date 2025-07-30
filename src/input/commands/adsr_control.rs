@@ -50,14 +50,14 @@ impl InputCommand for ADSRControlCommand {
         
         if window.is_key_pressed(key, KeyRepeat::Yes) {
             match (self.parameter, self.increase) {
-                (ADSRParameter::Attack, true) => state.increase_attack(),
-                (ADSRParameter::Attack, false) => state.decrease_attack(),
-                (ADSRParameter::Decay, true) => state.increase_decay(),
-                (ADSRParameter::Decay, false) => state.decrease_decay(),
-                (ADSRParameter::Sustain, true) => state.increase_sustain(),
-                (ADSRParameter::Sustain, false) => state.decrease_sustain(),
-                (ADSRParameter::Release, true) => state.increase_release(),
-                (ADSRParameter::Release, false) => state.decrease_release(),
+                (ADSRParameter::Attack, true) => state.increase_current_track_attack(),
+                (ADSRParameter::Attack, false) => state.decrease_current_track_attack(),
+                (ADSRParameter::Decay, true) => state.increase_current_track_decay(),
+                (ADSRParameter::Decay, false) => state.decrease_current_track_decay(),
+                (ADSRParameter::Sustain, true) => state.increase_current_track_sustain(),
+                (ADSRParameter::Sustain, false) => state.decrease_current_track_sustain(),
+                (ADSRParameter::Release, true) => state.increase_current_track_release(),
+                (ADSRParameter::Release, false) => state.decrease_current_track_release(),
             }
         }
     }
